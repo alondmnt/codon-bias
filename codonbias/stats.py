@@ -5,6 +5,7 @@ import pandas as pd
 
 gc = pd.read_csv(f'{os.path.dirname(__file__)}/genetic_code_ncbi.csv',
                  index_col=0).sort_index()
+# https://en.wikipedia.org/wiki/List_of_genetic_codes
 
 
 class CodonCounter(object):
