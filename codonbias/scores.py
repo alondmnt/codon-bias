@@ -88,7 +88,7 @@ class FractionOfOptimalCodons(ScalarScore, VectorScore):
         return self.weights.loc[self._get_codon_vector(seq)].values
 
 
-class EffeciveNumberOfCodons(ScalarScore):
+class EffectiveNumberOfCodons(ScalarScore):
     def __init__(self, genetic_code=1):
         self.genetic_code = genetic_code
 
