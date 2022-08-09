@@ -14,8 +14,8 @@ class CodonCounter(object):
         self.counts = pd.Series(self._count(seqs), name='count')
 
     def _count(self, seqs):
-        if not isinstance(seqs, str) and isinstance(seqs, Iterable):
-            return sum(list(map(self._count, seqs)), start=Counter())
+        if not isinstance(seqs, str):
+            return sum([self._count(s) for s in seqs], start=Counter())
 
         seqs = seqs.upper().replace('U', 'T')
 
