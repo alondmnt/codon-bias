@@ -1,4 +1,4 @@
-from collections import Counter, Iterable
+from collections import Counter
 import os
 
 import pandas as pd

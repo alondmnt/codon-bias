@@ -1,5 +1,3 @@
-from collections import Iterable
-
 import numpy as np
 import pandas as pd
 
@@ -66,3 +64,31 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
 
     def _calc_vector(self, seq):
         return self.weights.loc[self._get_codon_vector(seq)].values
+
+
+class EffeciveNumberOfCodons(ScalarScore):
+    def __init__(self, genetic_code=1):
+        self.genetic_code = genetic_code
+
+    def _calc_score(self, seq):
+        counts = CodonCounter(seq, genetic_code=self.genetic_code).get_aa_table()
+        counts = counts[counts.index.get_level_values('aa') != '*']
+
+        N = counts.groupby('aa').sum()
+        P = counts / N
+        F = ((N * (P**2).groupby('aa').sum() - 1) / (N-1)).to_frame('F')
+        F['deg'] = P.groupby('aa').size()
+        deg_count = F.groupby('deg').size().to_frame('deg_count')
+
+        # at least 2 samples from AA to be included
+        F = F.loc[(N > 1) & (F['F'] > 0)].groupby('deg').mean()\
+            .join(deg_count, how='right')
+
+        # misssing AA cases
+        miss_3 = np.isnan(F.loc[3, 'F'])
+        F['F'] = F['F'].fillna(1/F.index.to_series())  # use 1/deg
+        if miss_3:
+            F.loc[3, 'F'] = 0.5*(F.loc[2, 'F'] + F.loc[4, 'F'])
+
+        ENC = (F['deg_count'] / F['F']).sum()
+        return min([61., ENC])
