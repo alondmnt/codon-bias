@@ -66,6 +66,28 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         return self.weights.loc[self._get_codon_vector(seq)].values
 
 
+class FractionOfOptimalCodons(ScalarScore, VectorScore):
+    def __init__(self, ref_seq, genetic_code=1, ignore_stop=True):
+        self.genetic_code = genetic_code
+        self.ignore_stop = ignore_stop
+
+        self.weights = CodonCounter(ref_seq, genetic_code=genetic_code)\
+            .get_aa_table().groupby('aa').apply(lambda x: x / x.max())
+        self.weights[self.weights < 1] = 0
+        if ignore_stop:
+            self.weights['*'] = np.nan
+        self.weights = self.weights.droplevel('aa')
+
+    def _calc_score(self, seq):
+        counts = CodonCounter(seq, self.genetic_code).counts
+        nn = self.weights.index[np.isfinite(self.weights)]
+
+        return (self.weights[nn] * counts.reindex(nn)).sum() / counts.reindex(nn).sum()
+
+    def _calc_vector(self, seq):
+        return self.weights.loc[self._get_codon_vector(seq)].values
+
+
 class EffeciveNumberOfCodons(ScalarScore):
     def __init__(self, genetic_code=1):
         self.genetic_code = genetic_code
