@@ -67,13 +67,14 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
 
 
 class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
-    def __init__(self, ref_seq, genetic_code=1, ignore_stop=True):
+    def __init__(self, ref_seq, thresh=1, genetic_code=1, ignore_stop=True):
+        self.thresh = thresh
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
 
         self.weights = CodonCounter(ref_seq, genetic_code=genetic_code)\
             .get_aa_table().groupby('aa').apply(lambda x: x / x.max())
-        self.weights[self.weights < 1] = 0
+        self.weights[self.weights < self.thresh] = 0
         if ignore_stop:
             self.weights['*'] = np.nan
         self.weights = self.weights.droplevel('aa')
