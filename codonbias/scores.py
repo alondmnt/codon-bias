@@ -66,7 +66,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         return self.weights.loc[self._get_codon_vector(seq)].values
 
 
-class FractionOfOptimalCodons(ScalarScore, VectorScore):
+class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
     def __init__(self, ref_seq, genetic_code=1, ignore_stop=True):
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
