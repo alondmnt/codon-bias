@@ -46,8 +46,34 @@ class VectorScore(object):
         return [seq[i:i+3] for i in range(0, len(seq), 3)]
 
 
+class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
+    def __init__(self, ref_seq, thresh=1, genetic_code=1, ignore_stop=True):
+        """ Ikemura, J Mol Biol 1981 """
+        self.thresh = thresh
+        self.genetic_code = genetic_code
+        self.ignore_stop = ignore_stop
+
+        self.weights = CodonCounter(ref_seq, genetic_code=genetic_code)\
+            .get_aa_table().groupby('aa').apply(lambda x: x / x.max())
+        self.weights[self.weights >= self.thresh] = 1  # optimal
+        self.weights[self.weights < self.thresh] = 0  # non-optimal
+        if ignore_stop:
+            self.weights['*'] = np.nan
+        self.weights = self.weights.droplevel('aa')
+
+    def _calc_score(self, seq):
+        counts = CodonCounter(seq, self.genetic_code).counts
+        nn = self.weights.index[np.isfinite(self.weights)]
+
+        return (self.weights[nn] * counts.reindex(nn)).sum() / counts.reindex(nn).sum()
+
+    def _calc_vector(self, seq):
+        return self.weights.loc[self._get_codon_vector(seq)].values
+
+
 class CodonAdaptationIndex(ScalarScore, VectorScore):
     def __init__(self, ref_seq, genetic_code=1, ignore_stop=True):
+        """ Sharp & Li, NAR 1987 """
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
 
@@ -66,31 +92,9 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         return self.weights.loc[self._get_codon_vector(seq)].values
 
 
-class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
-    def __init__(self, ref_seq, thresh=1, genetic_code=1, ignore_stop=True):
-        self.thresh = thresh
-        self.genetic_code = genetic_code
-        self.ignore_stop = ignore_stop
-
-        self.weights = CodonCounter(ref_seq, genetic_code=genetic_code)\
-            .get_aa_table().groupby('aa').apply(lambda x: x / x.max())
-        self.weights[self.weights < self.thresh] = 0
-        if ignore_stop:
-            self.weights['*'] = np.nan
-        self.weights = self.weights.droplevel('aa')
-
-    def _calc_score(self, seq):
-        counts = CodonCounter(seq, self.genetic_code).counts
-        nn = self.weights.index[np.isfinite(self.weights)]
-
-        return (self.weights[nn] * counts.reindex(nn)).sum() / counts.reindex(nn).sum()
-
-    def _calc_vector(self, seq):
-        return self.weights.loc[self._get_codon_vector(seq)].values
-
-
 class EffectiveNumberOfCodons(ScalarScore):
     def __init__(self, genetic_code=1):
+        """ Wright, Gene 1990 """
         self.genetic_code = genetic_code
 
     def _calc_score(self, seq):
