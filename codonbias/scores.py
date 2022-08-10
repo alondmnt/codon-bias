@@ -53,12 +53,11 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
 
-        self.weights = CodonCounter(ref_seq, genetic_code=genetic_code)\
+        self.weights = CodonCounter(ref_seq,
+            genetic_code=genetic_code, ignore_stop=ignore_stop)\
             .get_aa_table().groupby('aa').apply(lambda x: x / x.max())
         self.weights[self.weights >= self.thresh] = 1  # optimal
         self.weights[self.weights < self.thresh] = 0  # non-optimal
-        if ignore_stop:
-            self.weights['*'] = np.nan
         self.weights = self.weights.droplevel('aa')
 
     def _calc_score(self, seq):
@@ -71,16 +70,40 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         return self.weights.loc[self._get_codon_vector(seq)].values
 
 
+class RelativeSynonymousCodonUsage(VectorScore):
+    def __init__(self, ref_seq=None, genetic_code=1, ignore_stop=True):
+        """ Sharp & Li, NAR 1986 """
+        self.genetic_code = genetic_code
+        self.ignore_stop = ignore_stop
+
+        if ref_seq is None:
+            ref = CodonCounter('',
+                genetic_code=genetic_code, ignore_stop=ignore_stop)\
+                .get_aa_table().to_frame('count')
+            ref = ref.join(ref.groupby('aa').size().to_frame('deg'))
+            ref['count'] = 1/ref['deg']
+            self.reference = ref['count']
+        else:
+            self.reference = CodonCounter(ref_seq,
+                genetic_code=genetic_code, ignore_stop=ignore_stop)\
+                .get_aa_table(normed=True)
+
+    def _calc_vector(self, seq):
+        counts = CodonCounter(seq,
+            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)\
+            .get_aa_table(normed=True)
+        return counts / self.reference
+
+
 class CodonAdaptationIndex(ScalarScore, VectorScore):
     def __init__(self, ref_seq, genetic_code=1, ignore_stop=True):
         """ Sharp & Li, NAR 1987 """
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
 
-        self.weights = CodonCounter(ref_seq, genetic_code=genetic_code)\
+        self.weights = CodonCounter(ref_seq,
+            genetic_code=genetic_code, ignore_stop=ignore_stop)\
             .get_aa_table().groupby('aa').apply(lambda x: x / x.max())
-        if ignore_stop:
-            self.weights['*'] = np.nan
         self.weights = self.weights.droplevel('aa')
 
     def _calc_score(self, seq):
@@ -98,8 +121,9 @@ class EffectiveNumberOfCodons(ScalarScore):
         self.genetic_code = genetic_code
 
     def _calc_score(self, seq):
-        counts = CodonCounter(seq, genetic_code=self.genetic_code).get_aa_table()
-        counts = counts[counts.index.get_level_values('aa') != '*']
+        counts = CodonCounter(seq,
+            genetic_code=self.genetic_code, ignore_stop=True)\
+            .get_aa_table()
 
         N = counts.groupby('aa').sum()
         P = counts / N

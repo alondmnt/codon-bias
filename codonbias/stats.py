@@ -9,8 +9,9 @@ gc = pd.read_csv(f'{os.path.dirname(__file__)}/genetic_code_ncbi.csv',
 
 
 class CodonCounter(object):
-    def __init__(self, seqs, genetic_code=1):
+    def __init__(self, seqs, genetic_code=1, ignore_stop=True):
         self.genetic_code = str(genetic_code)
+        self.ignore_stop = ignore_stop
         self.counts = pd.Series(self._count(seqs), name='count')
 
     def _count(self, seqs):
@@ -23,7 +24,10 @@ class CodonCounter(object):
 
     def get_codon_table(self, normed=False):
         stats = gc[[self.genetic_code]].join(self.counts)\
-            .fillna(0.)['count']
+            .fillna(0.)
+        if self.ignore_stop:
+            stats = stats.loc[stats[self.genetic_code] != '*']
+        stats = stats['count']
         if normed:
             stats /= stats.sum()
 
@@ -34,6 +38,8 @@ class CodonCounter(object):
             .rename(columns={self.genetic_code: 'aa'}).fillna(0.)\
             .set_index('aa', append=True).reorder_levels(['aa', 'codon'])\
             .sort_index()
+        if self.ignore_stop:
+            stats = stats.loc[stats.index.get_level_values('aa') != '*']
         if normed:
             stats = stats.join(stats.groupby('aa').sum()\
                 .rename(columns={'count': 'norm'}))
