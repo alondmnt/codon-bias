@@ -47,7 +47,7 @@ class VectorScore(object):
 
 
 class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
-    def __init__(self, ref_seq, thresh=1, genetic_code=1, ignore_stop=True):
+    def __init__(self, ref_seq, thresh=0.95, genetic_code=1, ignore_stop=True):
         """ Ikemura, J Mol Biol 1981 """
         self.thresh = thresh
         self.genetic_code = genetic_code
