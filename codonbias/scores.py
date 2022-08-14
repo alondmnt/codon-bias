@@ -5,7 +5,7 @@ import pandas as pd
 from scipy import stats
 
 from .stats import CodonCounter
-from .utils import geomean, reverse_complement
+from .utils import fetch_GCN_from_GtRNAdb, geomean, reverse_complement
 
 
 class ScalarScore(object):
@@ -146,15 +146,23 @@ class EffectiveNumberOfCodons(ScalarScore):
 
 
 class TrnaAdaptationIndex(ScalarScore, VectorScore):
-    def __init__(self, tGCN, prokaryote=False, s_values='dosReis', genetic_code=1):
+    def __init__(self, tGCN=None, url=None, genome_id=None, domain=None,
+                 prokaryote=False, s_values='dosReis', genetic_code=1):
         """ dos Reis, Savva & Wernisch, NAR 2004. """
         self.ignore_stop = True  # score is not defined for STOP codons
         self.genetic_code = genetic_code
 
-        self.tGCN = tGCN  # tRNA gene copy numbers of the organism
+        # tRNA gene copy numbers of the organism
+        if url is not None or (genome_id is not None and domain is not None):
+            tGCN = fetch_GCN_from_GtRNAdb(url=url, domain=domain, genome=genome_id)
+        if tGCN is None:
+            raise Exception('must provide either: tGCN dataframe, GtRNAdb url, or GtRNAdb genome_id+domain')
+        self.tGCN = tGCN
+
+        # S-values: tRNA-codon efficiency of coupling
         self.s_values = pd.read_csv(
             f'{os.path.dirname(__file__)}/tAI_svalues_{s_values}.csv',
-            dtype={'weight': float, 'prokaryote': bool}, comment='#')  # tRNA-codon efficiency of coupling
+            dtype={'weight': float, 'prokaryote': bool}, comment='#')
         if not prokaryote:
             self.s_values = self.s_values.loc[~self.s_values['prokaryote']]
 
