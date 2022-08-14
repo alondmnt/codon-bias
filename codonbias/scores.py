@@ -157,12 +157,15 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
             tGCN = fetch_GCN_from_GtRNAdb(url=url, domain=domain, genome=genome_id)
         if tGCN is None:
             raise Exception('must provide either: tGCN dataframe, GtRNAdb url, or GtRNAdb genome_id+domain')
+        tGCN['anti_codon'] = tGCN['anti_codon'].str.upper().str.replace('U', 'T')
         self.tGCN = tGCN
 
         # S-values: tRNA-codon efficiency of coupling
         self.s_values = pd.read_csv(
             f'{os.path.dirname(__file__)}/tAI_svalues_{s_values}.csv',
             dtype={'weight': float, 'prokaryote': bool}, comment='#')
+        self.s_values['anti'] = self.s_values['anti'].str.upper().str.replace('U', 'T')
+        self.s_values['cod'] = self.s_values['cod'].str.upper().str.replace('U', 'T')
         if not prokaryote:
             self.s_values = self.s_values.loc[~self.s_values['prokaryote']]
 
