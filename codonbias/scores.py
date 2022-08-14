@@ -1,7 +1,11 @@
+import os
+
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 from .stats import CodonCounter
+from .utils import geomean, reverse_complement
 
 
 class ScalarScore(object):
@@ -19,11 +23,6 @@ class ScalarScore(object):
 
     def _calc_score(self, seq):
         raise Exception('not implemented')
-
-    def _geomean(self, weights, counts):
-        # TODO: move?
-        nn = weights.index[np.isfinite(np.log(weights))]
-        return np.exp((np.log(weights[nn]) * counts.reindex(nn)).sum() / counts.reindex(nn).sum())
 
 
 class VectorScore(object):
@@ -109,7 +108,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
     def _calc_score(self, seq):
         counts = CodonCounter(seq, self.genetic_code).counts
 
-        return self._geomean(self.weights, counts)
+        return geomean(self.weights, counts)
 
     def _calc_vector(self, seq):
         return self.weights.loc[self._get_codon_vector(seq)].values
@@ -119,10 +118,11 @@ class EffectiveNumberOfCodons(ScalarScore):
     def __init__(self, genetic_code=1):
         """ Wright, Gene 1990 """
         self.genetic_code = genetic_code
+        self.ignore_stop = True  # score is not defined for STOP codons
 
     def _calc_score(self, seq):
         counts = CodonCounter(seq,
-            genetic_code=self.genetic_code, ignore_stop=True)\
+            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)\
             .get_aa_table()
 
         N = counts.groupby('aa').sum()
@@ -143,3 +143,59 @@ class EffectiveNumberOfCodons(ScalarScore):
 
         ENC = (F['deg_count'] / F['F']).sum()
         return min([61., ENC])
+
+
+class TrnaAdaptationIndex(ScalarScore, VectorScore):
+    def __init__(self, tGCN, prokaryote=False, s_values='dosReis', genetic_code=1):
+        """ dos Reis, Savva & Wernisch, NAR 2004. """
+        self.ignore_stop = True  # score is not defined for STOP codons
+        self.genetic_code = genetic_code
+
+        self.tGCN = tGCN  # tRNA gene copy numbers of the organism
+        self.s_values = pd.read_csv(
+            f'{os.path.dirname(__file__)}/tAI_svalues_{s_values}.csv',
+            dtype={'weight': float, 'prokaryote': bool}, comment='#')  # tRNA-codon efficiency of coupling
+        if not prokaryote:
+            self.s_values = self.s_values.loc[~self.s_values['prokaryote']]
+
+        self.weights = self._calc_weights()
+
+    def _calc_weights(self):
+        # init the dataframe
+        weights = CodonCounter('',
+            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)\
+            .get_aa_table().to_frame('count')
+        weights = weights.join(weights.groupby('aa').size().to_frame('deg'))\
+            .reset_index().drop(columns=['aa'])[['codon', 'deg']]
+        # columns: codon, deg
+
+        # match all possible tRNAs to codons by the 1st,2nd positions
+        weights['cod_12'] = weights['codon'].str[:2]
+        self.tGCN['cod_12'] = self.tGCN['anti_codon'].apply(reverse_complement).str[:2]
+        weights = weights.merge(self.tGCN, on='cod_12')
+        # columns: codon, deg, cod_12, anti_codon, GCN
+
+        # match all possible pairs to S-values by the 3rd position
+        weights['anti'] = weights['anti_codon'].str[0]
+        weights['cod'] = weights['codon'].str[-1]
+        weights = weights.merge(self.s_values, on=['anti', 'cod'])
+        weights = weights.loc[weights['deg'] >= weights['min_deg']]
+        # columns: codon, deg, cod_12, anti_codon, GCN,
+        #          anti, cod, min_deg, weight, prokaryote
+
+        weights['weight'] = (1 - weights['weight']) * weights['GCN']
+        weights = weights.groupby('codon')['weight'].sum()
+
+        weights /= weights.max()
+        weights[weights == 0] = stats.gmean(
+            weights[(weights != 0) & np.isfinite(weights)])
+
+        return weights
+
+    def _calc_score(self, seq):
+        counts = CodonCounter(seq, self.genetic_code).counts
+
+        return geomean(self.weights, counts)
+
+    def _calc_vector(self, seq):
+        return self.weights.loc[self._get_codon_vector(seq)].values

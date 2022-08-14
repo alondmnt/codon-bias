@@ -1,0 +1,11 @@
+#optimization vs. PA (Tuller et al., Genome Biology 2011, https://doi.org/10.1186/gb-2011-12-11-r110)
+anti,cod,min_deg,weight,prokaryote
+A,T,1,0.0,0
+G,C,1,0.0,0
+T,A,1,0.0,0
+C,G,1,0.0,0
+G,T,2,0.561,0
+A,C,3,0.28,0
+A,A,3,0.9999,0
+T,G,2,0.68,0
+C,A,2,0.89,1
