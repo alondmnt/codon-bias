@@ -16,6 +16,11 @@ def geomean(weights, counts):
     return np.exp((np.log(weights[nn]) * counts.reindex(nn)).sum() / counts.reindex(nn).sum())
 
 
+def mean(weights, counts):
+    nn = weights.index[np.isfinite(weights)]
+    return (weights[nn] * counts.reindex(nn)).sum() / counts.reindex(nn).sum()
+
+
 def fetch_GCN_from_GtRNAdb(url=None, genome=None, domain=None):
     if genome is not None and domain is not None:
         url = f'http://gtrnadb.ucsc.edu/genomes/{domain}/{genome}/'

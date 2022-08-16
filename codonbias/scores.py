@@ -7,7 +7,7 @@ import pandas as pd
 from scipy import stats
 
 from .stats import CodonCounter
-from .utils import fetch_GCN_from_GtRNAdb, geomean, reverse_complement
+from .utils import fetch_GCN_from_GtRNAdb, geomean, mean, reverse_complement
 
 
 class ScalarScore(object):
@@ -63,9 +63,8 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
 
     def _calc_score(self, seq):
         counts = CodonCounter(seq, self.genetic_code).counts
-        nn = self.weights.index[np.isfinite(self.weights)]
 
-        return (self.weights[nn] * counts.reindex(nn)).sum() / counts.reindex(nn).sum()
+        return mean(self.weights, counts)
 
     def _calc_vector(self, seq):
         return self.weights.loc[self._get_codon_vector(seq)].values
@@ -215,8 +214,10 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
 
 class RelativeCodonBiasScore(ScalarScore, VectorScore):
-    def __init__(self, genetic_code=1, ignore_stop=True):
-        """ Roymondal, Das & Sahoo, DNA Research 2009. """
+    def __init__(self, directional=False, genetic_code=1, ignore_stop=True):
+        """ Roymondal, Das & Sahoo, DNA Research 2009.
+            directional: Sabi & Tuller, DNA Research 2014. """
+        self.directional = directional
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
 
@@ -224,7 +225,10 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
         counts = CodonCounter(seq, self.genetic_code, self.ignore_stop).counts
         D = self._calc_weights(seq)
 
-        return geomean(1 + D, counts) - 1
+        if self.directional:
+            return mean(D, counts)
+        else:
+            return geomean(1 + D, counts) - 1
 
     def _calc_vector(self, seq):
         D = self._calc_weights(seq)
@@ -238,14 +242,16 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
         # observed probabilities
         P = counts.get_codon_table(normed=True)
         # codon weights
-        D = (P - BCC) / BCC
+        if self.directional:
+            D = np.maximum(P / BCC, BCC / P)
+        else:
+            D = (P - BCC) / BCC
 
         return D
 
     def _calc_BNC(self, seq):
         """ calculate the background NUCLEOTIDE composition of the sequence. """
         BNC = pd.concat([pd.Series(Counter(seq[i::3])) for i in range(3)], axis=1)
-        # BNC /= BNC.sum()
 
         return BNC
 
