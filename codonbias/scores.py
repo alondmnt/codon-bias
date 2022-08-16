@@ -62,7 +62,7 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         self.weights = self.weights.droplevel('aa')
 
     def _calc_score(self, seq):
-        counts = CodonCounter(seq, self.genetic_code).counts
+        counts = CodonCounter(seq, genetic_code=self.genetic_code).counts
 
         return mean(self.weights, counts)
 
@@ -107,7 +107,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         self.weights = self.weights.droplevel('aa')
 
     def _calc_score(self, seq):
-        counts = CodonCounter(seq, self.genetic_code).counts
+        counts = CodonCounter(seq, genetic_code=self.genetic_code).counts
 
         return geomean(self.weights, counts)
 
@@ -205,7 +205,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         return weights
 
     def _calc_score(self, seq):
-        counts = CodonCounter(seq, self.genetic_code).counts
+        counts = CodonCounter(seq, genetic_code=self.genetic_code).counts
 
         return geomean(self.weights, counts)
 
@@ -222,7 +222,8 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
         self.ignore_stop = ignore_stop
 
     def _calc_score(self, seq):
-        counts = CodonCounter(seq, self.genetic_code, self.ignore_stop).counts
+        counts = CodonCounter(seq,
+            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop).counts
         D = self._calc_weights(seq)
 
         if self.directional:
@@ -236,7 +237,8 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
         return D.loc[self._get_codon_vector(seq)].values
 
     def _calc_weights(self, seq):
-        counts = CodonCounter(seq, self.genetic_code, self.ignore_stop)
+        counts = CodonCounter(seq,
+            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)
         # background probabilities
         BCC = self._calc_BCC(self._calc_BNC(seq))
         # observed probabilities
