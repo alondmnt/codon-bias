@@ -1,3 +1,5 @@
+from collections import Counter
+from itertools import product
 import os
 
 import numpy as np
@@ -210,3 +212,50 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
     def _calc_vector(self, seq):
         return self.weights.loc[self._get_codon_vector(seq)].values
+
+
+class RelativeCodonBiasScore(ScalarScore, VectorScore):
+    def __init__(self, genetic_code=1, ignore_stop=True):
+        """ Roymondal, Das & Sahoo, DNA Research 2009. """
+        self.genetic_code = genetic_code
+        self.ignore_stop = ignore_stop
+
+    def _calc_score(self, seq):
+        counts = CodonCounter(seq, self.genetic_code, self.ignore_stop).counts
+        D = self._calc_weights(seq)
+
+        return geomean(1 + D, counts) - 1
+
+    def _calc_vector(self, seq):
+        D = self._calc_weights(seq)
+
+        return D.loc[self._get_codon_vector(seq)].values
+
+    def _calc_weights(self, seq):
+        counts = CodonCounter(seq, self.genetic_code, self.ignore_stop)
+        # background probabilities
+        BCC = self._calc_BCC(self._calc_BNC(seq))
+        # observed probabilities
+        P = counts.get_codon_table(normed=True)
+        # codon weights
+        D = (P - BCC) / BCC
+
+        return D
+
+    def _calc_BNC(self, seq):
+        """ calculate the background NUCLEOTIDE composition of the sequence. """
+        BNC = pd.concat([pd.Series(Counter(seq[i::3])) for i in range(3)], axis=1)
+        # BNC /= BNC.sum()
+
+        return BNC
+
+    def _calc_BCC(self, BNC):
+        """ calculate the background CODON composition of the sequence. """
+        BCC = pd.DataFrame(
+            [(c1+c2+c3, BNC[0][c1] * BNC[1][c2] * BNC[2][c3])
+             for c1, c2, c3 in product('ACGT', 'ACGT', 'ACGT')],
+            columns=['codon', 'bcc'])
+        BCC = BCC.set_index('codon')['bcc']
+        BCC /= BCC.sum()
+
+        return BCC 
