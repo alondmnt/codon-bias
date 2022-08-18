@@ -9,27 +9,36 @@ gc = pd.read_csv(f'{os.path.dirname(__file__)}/genetic_code_ncbi.csv',
 
 
 class CodonCounter(object):
-    def __init__(self, seqs, genetic_code=1, ignore_stop=True):
+    def __init__(self, seqs, sum_seqs=True, genetic_code=1, ignore_stop=True):
+        self.sum_seqs = sum_seqs
         self.genetic_code = str(genetic_code)
         self.ignore_stop = ignore_stop
-        self.counts = pd.Series(self._count(seqs), name='count')
+        self.counts = self._count(seqs)
+        if self.counts.ndim == 1:
+            self.counts = self.counts.rename('count')
 
     def _count(self, seqs):
         if not isinstance(seqs, str):
-            return sum([self._count(s) for s in seqs], start=Counter())
+            counts = pd.concat([self._count(s) for s in seqs], axis=1)
+            if self.sum_seqs:
+                return counts.sum(axis=1)
+            else:
+                return counts
 
         seqs = seqs.upper().replace('U', 'T')
 
-        return Counter([seqs[i:i+3] for i in range(0, len(seqs), 3)])
+        return pd.Series(Counter([seqs[i:i+3] for i in range(0, len(seqs), 3)]))
 
     def get_codon_table(self, normed=False):
         stats = gc[[self.genetic_code]].join(self.counts)\
             .fillna(0.)
         if self.ignore_stop:
             stats = stats.loc[stats[self.genetic_code] != '*']
-        stats = stats['count']
+        stats = stats.drop(columns=self.genetic_code)
         if normed:
             stats /= stats.sum()
+        if stats.shape[1] == 1:
+            stats = stats.iloc[:, 0]
 
         return stats
 
@@ -41,8 +50,8 @@ class CodonCounter(object):
         if self.ignore_stop:
             stats = stats.loc[stats.index.get_level_values('aa') != '*']
         if normed:
-            stats = stats.join(stats.groupby('aa').sum()\
-                .rename(columns={'count': 'norm'}))
-            stats['count'] /= stats['norm']
+            stats /= stats.groupby('aa').sum()
+        if stats.shape[1] == 1:
+            stats = stats.iloc[:, 0]
 
-        return stats['count']
+        return stats
