@@ -20,7 +20,7 @@ class ScalarScore(object):
     def __init__(self):
         pass
 
-    def get_score(self, seq, slice=None):
+    def get_score(self, seq, slice=None, **kwargs):
         """
         Compute the score for a single, or multiple sequences. When
         `slice` is provided, all sequences will be sliced before
@@ -47,12 +47,12 @@ class ScalarScore(object):
         44.33333333333333
         """
         if not isinstance(seq, str):
-            return np.array([self.get_score(s, slice=slice) for s in seq])
+            return np.array([self.get_score(s, slice=slice, **kwargs) for s in seq])
 
         if slice is not None:
-            return self._calc_score(seq[slice])
+            return self._calc_score(seq[slice], **kwargs)
         else:
-            return self._calc_score(seq)
+            return self._calc_score(seq, **kwargs)
 
     def _calc_score(self, seq):
         raise Exception('not implemented')
@@ -69,7 +69,7 @@ class VectorScore(object):
     def __init__(self):
         pass
 
-    def get_vector(self, seq, slice=None):
+    def get_vector(self, seq, slice=None, **kwargs):
         """
         Compute the score vector for a single, or multiple sequences.
         When `slice` is provided, all sequences will be sliced before
@@ -90,12 +90,12 @@ class VectorScore(object):
             M.
         """
         if not isinstance(seq, str):
-            return np.array([self.get_vector(s, slice=slice) for s in seq])
+            return np.array([self.get_vector(s, slice=slice, **kwargs) for s in seq])
 
         if slice is not None:
-            return self._calc_vector(seq[slice])
+            return self._calc_vector(seq[slice], **kwargs)
         else:
-            return self._calc_vector(seq)
+            return self._calc_vector(seq, **kwargs)
 
     def _calc_vector(self, seq):
         raise Exception('not implemented')
