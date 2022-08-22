@@ -410,7 +410,7 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
     underrepresented codons are given lower weights. The score for a
     sequence is the geometric mean of codon ratios, minus 1. The
     returned vector for a sequence is an array with the ratio of the
-    corresponding codon (minus 1) in each position in the sequence.
+    corresponding codon in each position in the sequence.
 
     Sabi & Tuller (DNA Research, 2014) proposed a modified score based
     these principles, termed the Directional Codon Bias Score (DCBS).
@@ -421,21 +421,24 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
     underrepresented ones, and therefore both signals should
     contribute towards a higher (i.e., biased) score. This
     modification is activated by setting the `directional` parameter
-    to True.
+    to True and the `mean` parameter to 'arithmetic'.
 
     Parameters
     ----------
     directional : bool, optional
         When True will compute the modified version by Sabi & Tuller, by
         default False
+    mean : {'geometric', 'arithmetic'}, optional
+        How to compute the score, by default 'geometric'
     genetic_code : int, optional
         NCBI genetic code ID, by default 1
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by
         default True
     """
-    def __init__(self, directional=False, genetic_code=1, ignore_stop=True):
+    def __init__(self, directional=False, mean='geometric', genetic_code=1, ignore_stop=True):
         self.directional = directional
+        self.mean = mean
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
 
@@ -444,10 +447,12 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
             genetic_code=self.genetic_code, ignore_stop=self.ignore_stop).counts
         D = self._calc_weights(seq)
 
-        if self.directional:
+        if self.mean == 'geometric':
+            return geomean(D, counts) - 1
+        elif self.mean == 'arithmetic':
             return mean(D, counts)
         else:
-            return geomean(1 + D, counts) - 1
+            raise Exception(f'unknown mean: {self.mean}')
 
     def _calc_vector(self, seq):
         D = self._calc_weights(seq)
@@ -465,7 +470,7 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
         if self.directional:
             D = np.maximum(P / BCC, BCC / P)
         else:
-            D = (P - BCC) / BCC
+            D = P / BCC
 
         return D
 
