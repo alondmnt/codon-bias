@@ -176,12 +176,9 @@ class RelativeSynonymousCodonUsage(VectorScore):
         self.ignore_stop = ignore_stop
 
         if ref_seq is None:
-            ref = CodonCounter('',
+            self.reference = CodonCounter('',
                 genetic_code=genetic_code, ignore_stop=ignore_stop)\
-                .get_aa_table().to_frame('count')
-            ref = ref.join(ref.groupby('aa').size().to_frame('deg'))
-            ref['count'] = 1/ref['deg']
-            self.reference = ref['count']
+                .get_aa_table(normed=True, fillna=True)
         else:
             self.reference = CodonCounter(ref_seq,
                 genetic_code=genetic_code, ignore_stop=ignore_stop)\

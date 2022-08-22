@@ -44,7 +44,7 @@ class CodonCounter(object):
 
         return pd.Series(Counter([seqs[i:i+3] for i in range(0, len(seqs), 3)]))
 
-    def get_codon_table(self, normed=False):
+    def get_codon_table(self, normed=False, fillna=False):
         """
         Return codon counts as a Series (for a single summary) or
         DataFrame (for multiple summaries, when `sum_seqs` is False).
@@ -54,6 +54,9 @@ class CodonCounter(object):
         normed : bool, optional
             Determines whether codon counts will be normalized to sum to
             1, by default False
+        fillna : bool, optional
+            When True will fill NaNs according to a unifrom distribution,
+            by default False
 
         Returns
         -------
@@ -70,10 +73,12 @@ class CodonCounter(object):
             stats /= stats.sum()
         if stats.shape[1] == 1:
             stats = stats.iloc[:, 0]
+        if fillna:
+            stats = stats.fillna(1/len(stats))
 
         return stats
 
-    def get_aa_table(self, normed=False):
+    def get_aa_table(self, normed=False, fillna=False):
         """
         Return codon counts as a Series (for a single summary) or
         DataFrame (for multiple summaries, when `sum_seqs` is False),
@@ -83,7 +88,11 @@ class CodonCounter(object):
         ----------
         normed : bool, optional
             Determines whether codon counts will be normalized to sum to
-            1 for each amino acid (a vector that sums to 20), by default False
+            1 for each amino acid (a vector that sums to 20), by default
+            False
+        fillna : bool, optional
+            When True will fill NaNs according to a unifrom distribution,
+            by default False
 
         Returns
         -------
@@ -101,5 +110,11 @@ class CodonCounter(object):
             stats /= stats.groupby('aa').sum()
         if stats.shape[1] == 1:
             stats = stats.iloc[:, 0]
+        if fillna:
+            norm = stats.groupby('aa').size().to_frame('deg').join(stats)
+            if type(stats) == pd.DataFrame:
+                stats = stats.apply(lambda x: x.fillna(1 / norm['deg']))
+            else:
+                stats = stats.fillna(1 / norm['deg'])
 
         return stats

@@ -134,13 +134,8 @@ class CodonUsageFrequencySimilarity(PairwiseScore):
         if not self.synonymous:
             return counts.get_codon_table(normed=True).T.values.astype(np.float32)
 
-        weights = counts.get_aa_table(normed=True)
-        # convert NaNs to a uniform distribution
-        norm = weights.groupby('aa').size().to_frame('deg').join(weights)
-        if type(weights) == pd.DataFrame:
-            weights = weights.apply(lambda x: x.fillna(1 / norm['deg']))
-        else:
-            weights = weights.fillna(1 / norm['deg'])
+        weights = counts.get_aa_table(normed=True, fillna=True)
+
         return weights.T.values.astype(np.float32)
 
     def _calc_pair_score(self, w1, w2):
