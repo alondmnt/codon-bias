@@ -11,10 +11,41 @@ from .utils import fetch_GCN_from_GtRNAdb, geomean, mean, reverse_complement
 
 
 class ScalarScore(object):
+    """
+    Abstract class for models that output a scalar per sequence.
+    Inheriting classes may implement the computation of the score for
+    a single sequence in the method `_calc_score(seq)`. Parameters
+    of the model may be initialized with the instance of the class.
+    """
     def __init__(self):
         pass
 
     def get_score(self, seq, slice=None):
+        """
+        Compute the score for a single, or multiple sequences. When
+        `slice` is provided, all sequences will be sliced before
+        computing the score.
+
+        Parameters
+        ----------
+        seq : str or an iterable of str
+            DNA sequence, or an iterable of ones.
+        slice : slice, optional
+            Python slice object, by default None
+
+        Returns
+        -------
+        float or numpy.array
+            _description_
+
+        Examples
+        --------
+        >>> EffectiveNumberOfCodons().get_score('ACGACGGAGGAG')
+        35.0
+
+        >>> EffectiveNumberOfCodons().get_score('ACGACGGAGGAG', slice=slice(6))
+        44.33333333333333
+        """
         if not isinstance(seq, str):
             return np.array([self.get_score(s, slice=slice) for s in seq])
 
@@ -28,10 +59,36 @@ class ScalarScore(object):
 
 
 class VectorScore(object):
+    """
+    Abstract class for models that output a vector per sequence. For
+    example, the output can be a score per position in the sequence.
+    Inheriting classes may implement the computation of the score for
+    a single sequence in the method `_calc_vector(seq)`. Parameters
+    of the model may be initialized with the instance of the class.
+    """
     def __init__(self):
         pass
 
     def get_vector(self, seq, slice=None):
+        """
+        Compute the score vector for a single, or multiple sequences.
+        When `slice` is provided, all sequences will be sliced before
+        computing the score.
+
+        Parameters
+        ----------
+        seq : str or an iterable of str
+            DNA sequence, or an iterable of ones.
+        slice : slice, optional
+            Python slice object, by default None
+
+        Returns
+        -------
+        numpy.array, or numpy.array of numpy.array
+            1D array for a single sequence, 1D array of 1D arrays for
+            arbitrary sequences, or a matrix NxM for N sequences of length
+            M.
+        """
         if not isinstance(seq, str):
             return np.array([self.get_vector(s, slice=slice) for s in seq])
 
@@ -48,8 +105,30 @@ class VectorScore(object):
 
 
 class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
+    """
+    Frequency of Optimal Codons (FOP, Ikemura, J Mol Biol, 1981).
+    This model determines the optimal codons for each amino acid based
+    on their frequency in the given set of reference sequences
+    `ref_seq`. Multiple codons may be selected as optimal based on
+    `thresh`. The score for a sequence is the fraction of codons in
+    the sequence deemed optimal. The returned vector for a sequence is
+    a binary array where optimal positions contain 1 and non-optimal
+    ones contain 0.
+
+    Parameters
+    ----------
+    ref_seq : iterable of str
+        A set of reference DNA sequences for codon usage statistics.
+    thresh : float, optional
+        Minimal ratio between the frequency of a codon and the most
+        frequent one in order to be set as optimal, by default 0.95
+    genetic_code : int, optional
+        NCBI genetic code ID, by default 1
+    ignore_stop : bool, optional
+        Whether STOP codons will be discarded from the analysis, by
+        default True
+    """
     def __init__(self, ref_seq, thresh=0.95, genetic_code=1, ignore_stop=True):
-        """ Ikemura, J Mol Biol 1981 """
         self.thresh = thresh
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
@@ -71,8 +150,28 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
 
 
 class RelativeSynonymousCodonUsage(VectorScore):
+    """
+    Relative Synonymous Codon Usage (RSCU, Sharp & Li, NAR, 1986).
+    This model measures the deviation of synonymous codon usage from
+    uniformity and returns for each codon the ratio between its
+    observed frequency and its expected frequency if synonymous codons
+    were chosen randomly (uniformly). Overepresented codons will have
+    a score > 1, while underrepresented codons will have a score < 1.
+    A vector of 61 values is returned for each sequence.
+
+    Parameters
+    ----------
+    ref_seq : iterable of str, optional
+        When given, codon frequencies in the reference set
+        will be used instead of the uniform codon distribution,
+        by default None
+    genetic_code : int, optional
+        NCBI genetic code ID, by default 1
+    ignore_stop : bool, optional
+        Whether STOP codons will be discarded from the analysis, by
+        default True
+    """
     def __init__(self, ref_seq=None, genetic_code=1, ignore_stop=True):
-        """ Sharp & Li, NAR 1986 """
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
 
@@ -96,8 +195,30 @@ class RelativeSynonymousCodonUsage(VectorScore):
 
 
 class CodonAdaptationIndex(ScalarScore, VectorScore):
+    """
+    Codon Adaptation Index (CAI, Sharp & Li, NAR, 1987).
+    This model determines the level of optimality of codons based on
+    their frequency in the given set of reference sequences `ref_seq`.
+    For each amino acid, the most frequent synonymous codon receives
+    a weight of 1, while other codons are weighted based on their
+    relative frequency with respect to the most frequent synonymous
+    codon. The returned vector for a sequence is an array with the
+    weight of the corresponding codon in each position in the
+    sequence. The score for a sequence is the geometric mean of these
+    weights, and ranges from 0 (strong rare codon bias) to 1 (strong
+    frequent codon bias).
+
+    Parameters
+    ----------
+    ref_seq : iterable of str
+        Reference sequences for learning the codon frequencies.
+    genetic_code : int, optional
+        NCBI genetic code ID, by default 1
+    ignore_stop : bool, optional
+        Whether STOP codons will be discarded from the analysis, by
+        default True
+    """
     def __init__(self, ref_seq, genetic_code=1, ignore_stop=True):
-        """ Sharp & Li, NAR 1987 """
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
 
@@ -116,8 +237,22 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
 
 
 class EffectiveNumberOfCodons(ScalarScore):
+    """
+    Effective Number of Codons (ENC, Wright, Gene, 1990).
+    This model measures the deviation of synonymous codon usage from
+    uniformity based on a statistical model analogous to the effective
+    number of alleles in genetics. The score for a sequence is the
+    effective number of codon in use, and ranges from 20 (very strong
+    bias: a single codon per amino acid) to 61 (uniform use of all
+    codons). Thus, this score is expected to be negatively correlated
+    with most other codon bias measures.
+
+    Parameters
+    ----------
+    genetic_code : int, optional
+        NCBI genetic code ID, by default 1
+    """
     def __init__(self, genetic_code=1):
-        """ Wright, Gene 1990 """
         self.genetic_code = genetic_code
         self.ignore_stop = True  # score is not defined for STOP codons
 
@@ -147,9 +282,57 @@ class EffectiveNumberOfCodons(ScalarScore):
 
 
 class TrnaAdaptationIndex(ScalarScore, VectorScore):
+    """
+    tRNA Adaptation Index (tAI, dos Reis, Savva & Wernisch, NAR, 2004).
+    This model measures translational efficiency based on the
+    availablity of tRNAs (approximated by the gene copy number of each
+    tRNA species), and the efficiency of coupling between tRNAs and
+    codons (modeled via the set of `s_values` coefficients). Each codon
+    receives a weight in [0, 1] that describes its translational
+    efficiency. The returned vector for a sequence is an array with
+    the weight of the corresponding codon in each position in the
+    sequence. The score for a sequence is the geometric mean of these
+    weights, and ranges from 0 (low efficiency) to 1 (high efficiency).
+
+    Gene copy numbers can be provided explicitly, or automatically
+    downloaded from GtRNAdb.
+
+    The model was originally trained in S. cerevisiae and E. coli
+    in order to maximize the correlation with mRNA levels measured via
+    microarrays. The model was later refitted using protein abundance
+    levels (Tuller et al., Genome Biology, 2011). The `s_values`
+    parameter can be used to switch between these coefficients sets.
+    When analyzing an organism that is a prokaryote, the `prokaryote`
+    parameter should be set to True.
+
+    Parameters
+    ----------
+    tGCN : pandas.DataFrame, optional
+        tRNA Gene Copy Numbers given as a DataFrame with the columns
+        `anti_codon`, `GCN`, by default None
+    url : str, optional
+        URL of the relevant page on GtRNAdb, by default None
+    genome_id : str, optional
+        Genome ID of the organism, by default None
+    domain : str, optional
+        Taxonomic domain of the organism, by default None
+    prokaryote : bool, optional
+        Whether the organism is a prokaryote, by default False
+    s_values : {'dosReis', 'Tuller'}, optional
+        Coefficients of the tRNA-codon efficiency of coupling, by default 'dosReis'
+    genetic_code : int, optional
+        NCBI genetic code ID, by default 1
+
+    Notes
+    -----
+    For species-specific optimization of the tAI model, see:
+    Sabi & Tuller, DNA Research, 2014;
+    the stAIcalc online calculator: https://tau-tai.azurewebsites.net/;
+    and the gtAI package: https://github.com/AliYoussef96/gtAI.
+
+    """
     def __init__(self, tGCN=None, url=None, genome_id=None, domain=None,
                  prokaryote=False, s_values='dosReis', genetic_code=1):
-        """ dos Reis, Savva & Wernisch, NAR 2004. """
         self.ignore_stop = True  # score is not defined for STOP codons
         self.genetic_code = genetic_code
 
@@ -214,9 +397,44 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
 
 class RelativeCodonBiasScore(ScalarScore, VectorScore):
+    """
+    Relative Codon Bias Score (RCBS, Roymondal, Das & Sahoo, DNA
+    Research, 2009).
+    This model measures the deviation of codon usage from a background
+    distribution and computes for each codon the observed-to-expected
+    ratio. The background distribution is estimated for each sequence
+    separately, based on its nucleotide composition. The model's null
+    hypothesis is that the 3 codon positions are independently
+    distributed according to the same nucleotide distribution. Thus,
+    overrepresented codons are given higher weights while
+    underrepresented codons are given lower weights. The score for a
+    sequence is the geometric mean of codon ratios, minus 1. The
+    returned vector for a sequence is an array with the ratio of the
+    corresponding codon (minus 1) in each position in the sequence.
+
+    Sabi & Tuller (DNA Research, 2014) proposed a modified score based
+    these principles, termed the Directional Codon Bias Score (DCBS).
+    In this model underrepresented codons are given larger weights
+    (rather than lower weights) similarly to overrepresnted codons.
+    This model's hypothesis is that biased sequences will typically
+    include both highly overrepresnted codons as well as
+    underrepresented ones, and therefore both signals should
+    contribute towards a higher (i.e., biased) score. This
+    modification is activated by setting the `directional` parameter
+    to True.
+
+    Parameters
+    ----------
+    directional : bool, optional
+        When True will compute the modified version by Sabi & Tuller, by
+        default False
+    genetic_code : int, optional
+        NCBI genetic code ID, by default 1
+    ignore_stop : bool, optional
+        Whether STOP codons will be discarded from the analysis, by
+        default True
+    """
     def __init__(self, directional=False, genetic_code=1, ignore_stop=True):
-        """ Roymondal, Das & Sahoo, DNA Research 2009.
-            directional: Sabi & Tuller, DNA Research 2014. """
         self.directional = directional
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
@@ -252,13 +470,13 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
         return D
 
     def _calc_BNC(self, seq):
-        """ calculate the background NUCLEOTIDE composition of the sequence. """
+        """ Compute the background NUCLEOTIDE composition of the sequence. """
         BNC = pd.concat([pd.Series(Counter(seq[i::3])) for i in range(3)], axis=1)
 
         return BNC
 
     def _calc_BCC(self, BNC):
-        """ calculate the background CODON composition of the sequence. """
+        """ Compute the background CODON composition of the sequence. """
         BCC = pd.DataFrame(
             [(c1+c2+c3, BNC[0][c1] * BNC[1][c2] * BNC[2][c3])
              for c1, c2, c3 in product('ACGT', 'ACGT', 'ACGT')],
