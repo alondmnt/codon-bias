@@ -149,7 +149,7 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         return self.weights.loc[self._get_codon_vector(seq)].values
 
 
-class RelativeSynonymousCodonUsage(VectorScore):
+class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
     """
     Relative Synonymous Codon Usage (RSCU, Sharp & Li, NAR, 1986).
     This model measures the deviation of synonymous codon usage from
@@ -157,7 +157,10 @@ class RelativeSynonymousCodonUsage(VectorScore):
     observed frequency and its expected frequency if synonymous codons
     were chosen randomly (uniformly). Overepresented codons will have
     a score > 1, while underrepresented codons will have a score < 1.
-    A vector of 61 values is returned for each sequence.
+    A vector of 61 values is returned for each sequence. While not defined
+    as part of the original Sharp & Li model, the `get_score()` method
+    returns the geometric mean of the ratios for a sequence (minus 1), in
+    a similar way to the Relative Codon Bias Score (RCBS).
 
     Parameters
     ----------
@@ -165,13 +168,16 @@ class RelativeSynonymousCodonUsage(VectorScore):
         When given, codon frequencies in the reference set
         will be used instead of the uniform codon distribution,
         by default None
+    mean : {'geometric', 'arithmetic'}, optional
+        How to compute the score, by default 'geometric'
     genetic_code : int, optional
         NCBI genetic code ID, by default 1
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by
         default True
     """
-    def __init__(self, ref_seq=None, genetic_code=1, ignore_stop=True):
+    def __init__(self, ref_seq=None, mean='geometric', genetic_code=1, ignore_stop=True):
+        self.mean = mean
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
 
@@ -185,10 +191,22 @@ class RelativeSynonymousCodonUsage(VectorScore):
                 .get_aa_table(normed=True)
 
     def _calc_vector(self, seq):
-        counts = CodonCounter(seq,
+        P = CodonCounter(seq,
             genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)\
             .get_aa_table(normed=True)
-        return counts / self.reference
+        return P / self.reference
+
+    def _calc_score(self, seq):
+        counts = CodonCounter(seq,
+            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop).counts
+        D = self._calc_vector(seq).droplevel('aa')
+
+        if self.mean == 'geometric':
+            return geomean(D, counts) - 1
+        elif self.mean == 'arithmetic':
+            return mean(D, counts)
+        else:
+            raise Exception(f'unknown mean: {self.mean}')
 
 
 class CodonAdaptationIndex(ScalarScore, VectorScore):
