@@ -160,7 +160,10 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
     A vector of 61 values is returned for each sequence. While not defined
     as part of the original Sharp & Li model, the `get_score()` method
     returns the geometric mean of the ratios for a sequence (minus 1), in
-    a similar way to the Relative Codon Bias Score (RCBS).
+    a similar way to the Relative Codon Bias Score (RCBS). The
+    `directional` parameter modifies RSCU similarly to the way the
+    Directional Codon Bias Score (DCBS) modifies RCBS, by giving higher
+    weights to both overrepresented and underrepresented codons.
 
     Parameters
     ----------
@@ -168,6 +171,9 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
         When given, codon frequencies in the reference set
         will be used instead of the uniform codon distribution,
         by default None
+    directional : bool, optional
+        When True will compute the modified version by Sabi & Tuller, by
+        default False
     mean : {'geometric', 'arithmetic'}, optional
         How to compute the score, by default 'geometric'
     genetic_code : int, optional
@@ -176,7 +182,8 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
         Whether STOP codons will be discarded from the analysis, by
         default True
     """
-    def __init__(self, ref_seq=None, mean='geometric', genetic_code=1, ignore_stop=True):
+    def __init__(self, ref_seq=None, directional=False, mean='geometric', genetic_code=1, ignore_stop=True):
+        self.directional = directional
         self.mean = mean
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
@@ -190,16 +197,10 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
                 genetic_code=genetic_code, ignore_stop=ignore_stop)\
                 .get_aa_table(normed=True)
 
-    def _calc_vector(self, seq):
-        P = CodonCounter(seq,
-            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)\
-            .get_aa_table(normed=True)
-        return P / self.reference
-
     def _calc_score(self, seq):
         counts = CodonCounter(seq,
             genetic_code=self.genetic_code, ignore_stop=self.ignore_stop).counts
-        D = self._calc_vector(seq).droplevel('aa')
+        D = self._calc_weights(seq).droplevel('aa')
 
         if self.mean == 'geometric':
             return geomean(D, counts) - 1
@@ -207,6 +208,21 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
             return mean(D, counts)
         else:
             raise Exception(f'unknown mean: {self.mean}')
+
+    def _calc_vector(self, seq):
+        return self._calc_weights(seq)
+
+    def _calc_weights(self, seq):
+        P = CodonCounter(seq,
+            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)\
+            .get_aa_table(normed=True)
+        # codon weights
+        if self.directional:
+            D = np.maximum(P / self.reference, self.reference / P)
+        else:
+            D = P / self.reference
+
+        return D
 
 
 class CodonAdaptationIndex(ScalarScore, VectorScore):
@@ -428,9 +444,9 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
     corresponding codon in each position in the sequence.
 
     Sabi & Tuller (DNA Research, 2014) proposed a modified score based
-    these principles, termed the Directional Codon Bias Score (DCBS).
+    on these principles, termed the Directional Codon Bias Score (DCBS).
     In this model underrepresented codons are given larger weights
-    (rather than lower weights) similarly to overrepresnted codons.
+    (rather than smaller weights) similarly to overrepresnted codons.
     This model's hypothesis is that biased sequences will typically
     include both highly overrepresnted codons as well as
     underrepresented ones, and therefore both signals should
