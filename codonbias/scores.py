@@ -146,7 +146,7 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         return mean(self.weights, counts)
 
     def _calc_vector(self, seq):
-        return self.weights.loc[self._get_codon_vector(seq)].values
+        return self.weights.reindex(self._get_codon_vector(seq)).values
 
 
 class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
@@ -212,7 +212,7 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
 
     def _calc_vector(self, seq):
         weights = self._calc_weights(seq).droplevel('aa')
-        return weights.loc[self._get_codon_vector(seq)].values
+        return weights.reindex(self._get_codon_vector(seq)).values
 
     def get_weights(self, seq):
         """
@@ -285,7 +285,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         return geomean(self.weights, counts)
 
     def _calc_vector(self, seq):
-        return self.weights.loc[self._get_codon_vector(seq)].values
+        return self.weights.reindex(self._get_codon_vector(seq)).values
 
 
 class EffectiveNumberOfCodons(ScalarScore):
@@ -445,7 +445,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         return geomean(self.weights, counts)
 
     def _calc_vector(self, seq):
-        return self.weights.loc[self._get_codon_vector(seq)].values
+        return self.weights.reindex(self._get_codon_vector(seq)).values
 
 
 class RelativeCodonBiasScore(ScalarScore, VectorScore):
@@ -509,7 +509,7 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
     def _calc_vector(self, seq):
         D = self._calc_weights(seq)
 
-        return D.loc[self._get_codon_vector(seq)].values
+        return D.reindex(self._get_codon_vector(seq)).values
 
     def _calc_weights(self, seq):
         counts = CodonCounter(seq,
