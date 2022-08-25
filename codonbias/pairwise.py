@@ -97,13 +97,14 @@ class PairwiseScore(object):
         raise('not implemented')
 
 
-class CodonUsageFrequencySimilarity(PairwiseScore):
+class CodonUsageFrequency(PairwiseScore):
     """
-    Codon Usage Frequency Similarity (CUFS, Diament, Pinter & Tuller, Nat
+    Codon Usage Frequency (CUFS, Diament, Pinter & Tuller, Nat
     Commun, 2014).
-    This model compares the distribution of codons in a pair of sequences
-    using a distance metric for probability distrbutions (Endres &
-    Schindelin, 2003) that is based on KL-divergence.
+    This is a distance metric between pairs of sequences based on their
+    distribution of codons. It employs a distance metric for probability
+    distrbutions (Endres & Schindelin, 2003) that is based on KL
+    divergence.
 
     Parameters
     ----------
