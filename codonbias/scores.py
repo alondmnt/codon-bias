@@ -157,13 +157,15 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
     observed frequency and its expected frequency if synonymous codons
     were chosen randomly (uniformly). Overepresented codons will have
     a score > 1, while underrepresented codons will have a score < 1.
-    A vector of 61 values is returned for each sequence. While not defined
-    as part of the original Sharp & Li model, the `get_score()` method
-    returns the geometric mean of the ratios for a sequence (minus 1), in
-    a similar way to the Relative Codon Bias Score (RCBS). The
-    `directional` parameter modifies RSCU similarly to the way the
-    Directional Codon Bias Score (DCBS) modifies RCBS, by giving higher
-    weights to both overrepresented and underrepresented codons.
+    `get_weights()` returns a vector of 61 RSCU ratios for each sequence.
+    While not defined as part of the original Sharp & Li model, the
+    `get_vector()` method returns an array with the ratio of the
+    corresponding codon in each position in the sequence, and the
+    `get_score()` method returns the geometric mean of the ratios for a
+    sequence (minus 1), in a similar way to the Relative Codon Bias Score
+    (RCBS). The `directional` parameter modifies RSCU similarly to the way
+    the Directional Codon Bias Score (DCBS) modifies RCBS, by giving
+    higher weights to both overrepresented and underrepresented codons.
 
     Parameters
     ----------
@@ -190,12 +192,11 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
 
         if ref_seq is None:
             self.reference = CodonCounter('',
-                genetic_code=genetic_code, ignore_stop=ignore_stop)\
-                .get_aa_table(normed=True, fillna=True)
+                genetic_code=genetic_code, ignore_stop=ignore_stop)
         else:
             self.reference = CodonCounter(ref_seq,
-                genetic_code=genetic_code, ignore_stop=ignore_stop)\
-                .get_aa_table(normed=True)
+                genetic_code=genetic_code, ignore_stop=ignore_stop)
+        self.reference = self.reference.get_aa_table(normed=True, fillna=True)
 
     def _calc_score(self, seq):
         counts = CodonCounter(seq,
@@ -210,17 +211,37 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
             raise Exception(f'unknown mean: {self.mean}')
 
     def _calc_vector(self, seq):
+        weights = self._calc_weights(seq).droplevel('aa')
+        return weights.loc[self._get_codon_vector(seq)].values
+
+    def get_weights(self, seq):
+        """
+        Compute a vector of 61 RSCU codon weights (ratios) for each
+        sequence in `seq`.
+
+        Parameters
+        ----------
+        seq : str, or iterable of str
+            DNA sequence, or an iterable of ones.
+
+        Returns
+        -------
+        pandas.Series or pandas.DataFrame
+            RSCU weights for each codon, for each sequence.
+        """
         return self._calc_weights(seq)
 
     def _calc_weights(self, seq):
-        P = CodonCounter(seq,
+        P = CodonCounter(seq, sum_seqs=False,
             genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)\
             .get_aa_table(normed=True)
         # codon weights
         if self.directional:
-            D = np.maximum(P / self.reference, self.reference / P)
+            D = np.maximum(
+                P.divide(self.reference, axis=0),
+                self.reference.divide(P, axis=0))
         else:
-            D = P / self.reference
+            D = P.divide(self.reference, axis=0)
 
         return D
 
