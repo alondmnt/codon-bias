@@ -204,7 +204,7 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
         D = self._calc_weights(seq).droplevel('aa')
 
         if self.mean == 'geometric':
-            return geomean(D, counts) - 1
+            return geomean(np.log(D), counts) - 1
         elif self.mean == 'arithmetic':
             return mean(D, counts)
         else:
@@ -278,11 +278,12 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
             genetic_code=genetic_code, ignore_stop=ignore_stop)\
             .get_aa_table().groupby('aa').apply(lambda x: x / x.max())
         self.weights = self.weights.droplevel('aa')
+        self.log_weights = np.log(self.weights)
 
     def _calc_score(self, seq):
         counts = CodonCounter(seq, genetic_code=self.genetic_code).counts
 
-        return geomean(self.weights, counts)
+        return geomean(self.log_weights, counts)
 
     def _calc_vector(self, seq):
         return self.weights.reindex(self._get_codon_vector(seq)).values
@@ -406,6 +407,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
             self.s_values = self.s_values.loc[~self.s_values['prokaryote']]
 
         self.weights = self._calc_weights()
+        self.log_weights = np.log(self.weights)
 
     def _calc_weights(self):
         # init the dataframe
@@ -442,7 +444,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
     def _calc_score(self, seq):
         counts = CodonCounter(seq, genetic_code=self.genetic_code).counts
 
-        return geomean(self.weights, counts)
+        return geomean(self.log_weights, counts)
 
     def _calc_vector(self, seq):
         return self.weights.reindex(self._get_codon_vector(seq)).values
@@ -500,7 +502,7 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
         D = self._calc_weights(seq)
 
         if self.mean == 'geometric':
-            return geomean(D, counts) - 1
+            return geomean(np.log(D), counts) - 1
         elif self.mean == 'arithmetic':
             return mean(D, counts)
         else:

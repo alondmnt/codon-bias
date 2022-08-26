@@ -25,15 +25,17 @@ def reverse_complement(seq):
     return ''.join([complement[b] for b in seq[::-1]])
 
 
-def geomean(weights, counts):
+def geomean(log_weights, counts):
     """
     Compute the geometric mean based on codon scores given in
-    `weights`, and codon counts given in `counts`.
+    `log_weights` (weights in logarithmic scale), and codon counts give
+    in `counts`.
 
     Parameters
     ----------
-    weights : pandas.Series
-        Codon scores, with codons as index and scores as values.
+    log_weights : pandas.Series
+        Codon scores in logarithmic scale, with codons as index and scores
+        as values.
     counts : pandas.Series
         Codon counts, with codons as index and counts as values.
 
@@ -42,8 +44,8 @@ def geomean(weights, counts):
     float
         Geometric mean.
     """
-    nn = weights.index[np.isfinite(np.log(weights))]
-    return np.exp((np.log(weights[nn]) * counts.reindex(nn)).sum() / counts.reindex(nn).sum())
+    nn = log_weights.index[np.isfinite(log_weights)]
+    return np.exp((log_weights[nn] * counts.reindex(nn)).sum() / counts.reindex(nn).sum())
 
 
 def mean(weights, counts):
