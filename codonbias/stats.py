@@ -33,16 +33,19 @@ class CodonCounter(object):
             self.counts = self.counts.rename('count')
 
     def _count(self, seqs):
-        if not isinstance(seqs, str):
-            counts = pd.concat([self._count(s) for s in seqs], axis=1)
-            if self.sum_seqs:
-                return counts.sum(axis=1)
-            else:
-                return counts
+        if isinstance(seqs, str):
+            return self._count_single(seqs)
 
-        seqs = seqs.upper().replace('U', 'T')
+        counts = pd.concat([self._count_single(s) for s in seqs], axis=1)
+        if self.sum_seqs:
+            return counts.sum(axis=1)
+        else:
+            return counts
 
-        return pd.Series(Counter([seqs[i:i+3] for i in range(0, len(seqs), 3)]))
+    def _count_single(self, seq):
+        seq = seq.upper().replace('U', 'T')
+
+        return pd.Series(Counter([seq[i:i+3] for i in range(0, len(seq), 3)]))
 
     def get_codon_table(self, normed=False, fillna=False):
         """
