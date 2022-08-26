@@ -8,6 +8,7 @@ This package provides analysis tools for genomic sequences, focusing on protein 
 - Effective Number of Codons (ENC)
 - tRNA Adaptation Index (tAI)
 - Relative Codon Bias Score (RCBS)
+- Directional Codon Bias Score (DCBS)
 - Codon Usage Frequency Similarity (CUFS)
 
 ## installation
