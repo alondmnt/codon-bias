@@ -16,3 +16,7 @@ This package provides analysis tools for genomic sequences, focusing on protein 
 ```
 pip install codon-bias
 ```
+
+## documentation
+
+read on [readthedocs](https://codon-bias.readthedocs.org).
