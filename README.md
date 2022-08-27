@@ -19,4 +19,4 @@ pip install codon-bias
 
 ## documentation
 
-read on [readthedocs](https://codon-bias.readthedocs.org).
+Read on [readthedocs](https://codon-bias.readthedocs.org).
