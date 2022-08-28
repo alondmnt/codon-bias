@@ -121,3 +121,74 @@ class CodonCounter(object):
                 stats = stats.fillna(1 / norm['deg'])
 
         return stats
+
+
+class NucleotideCounter(object):
+    """
+    Nucleotide statistics for a single, or multiple DNA sequences.
+    When the `k_mer` argument is provided, the counter will return
+    dinucleotide (k_mer=2), trinucleotide (k_mer=3) statistics, etc.
+
+    Parameters
+    ----------
+    seqs : str, or iterable of str
+        DNA sequence, or an iterable of ones.
+    k_mer : int, optional
+        Determines the length of the k-mer to base statistics on, by
+        default 1
+    sum_seqs : bool, optional
+        Determines how multiple sequences will be handled. When True,
+        their statistics will be summed, otherwise separate statistics
+        will be kept in a table. by default True
+    """
+    def __init__(self, seqs, k_mer=1, sum_seqs=True):
+        self.k_mer = k_mer
+        self.sum_seqs = sum_seqs
+
+        self.counts = self._count(seqs)
+        self.counts = self.counts.loc[
+            self.counts.index.str.contains('^[ACGT]+$', regex=True)]\
+            .sort_index()
+        if self.counts.ndim == 1:
+            self.counts = self.counts.rename('count')
+
+    def _count(self, seqs):
+        if isinstance(seqs, str):
+            return self._count_single(seqs)
+
+        counts = pd.concat([self._count_single(s) for s in seqs], axis=1)\
+            .fillna(0)
+        if self.sum_seqs:
+            return counts.sum(axis=1)
+        else:
+            return counts
+
+    def _count_single(self, seq):
+        seq = seq.upper().replace('U', 'T')
+
+        last_pos = len(seq) - self.k_mer + 1
+        return pd.Series(Counter(
+            [seq[i:i+self.k_mer] for i in range(last_pos)]))
+
+    def get_table(self, normed=False):
+        """
+        Return nucleotide counts as a Series (for a single summary) or
+        DataFrame (for multiple summaries, when `sum_seqs` is False),
+        indexed by the nucletoide k-mer.
+
+        Parameters
+        ----------
+        normed : bool, optional
+            Determines whether nucleotide counts will be normalized to sum
+            to 1, by default False
+
+        Returns
+        -------
+        pandas.Series or pandas.DataFrame
+            Neltodie k-mer counts (or frequencies) with k-mers as index,
+            and counts as values.
+        """
+        if normed:
+            return self.counts / self.counts.sum()
+        else:
+            return self.counts
