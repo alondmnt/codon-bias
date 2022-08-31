@@ -67,7 +67,7 @@ class CodonCounter(object):
 
         return counts
 
-    def get_codon_table(self, normed=False, fillna=False):
+    def get_codon_table(self, normed=False, pseudocount=1):
         """
         Return codon counts as a Series (for a single summary) or
         DataFrame (for multiple summaries, when `sum_seqs` is False).
@@ -77,9 +77,9 @@ class CodonCounter(object):
         normed : bool, optional
             Determines whether codon counts will be normalized to sum to
             1, by default False
-        fillna : bool, optional
-            When True will fill NaNs according to a unifrom distribution,
-            by default False
+        pseudocount : int, optional
+            Pseudocount correction for normalized codon frequencies, by
+            default 0
 
         Returns
         -------
@@ -97,18 +97,19 @@ class CodonCounter(object):
             stats = stats.drop(columns=self.genetic_code)
 
         if normed:
+            if pseudocount:
+                stats += pseudocount
             stats = stats / stats.sum()
         if stats.shape[1] == 1:
             stats = stats.iloc[:, 0]
-        if fillna:
-            stats = stats.fillna(1/len(stats))
 
+        stats = stats.sort_index()
         if self.k_mer == 1:
             stats = stats.rename_axis(index='codon')
 
         return stats
 
-    def get_aa_table(self, normed=False, fillna=False):
+    def get_aa_table(self, normed=False, pseudocount=1):
         """
         Return codon counts as a Series (for a single summary) or
         DataFrame (for multiple summaries, when `sum_seqs` is False),
@@ -120,9 +121,9 @@ class CodonCounter(object):
             Determines whether codon counts will be normalized to sum to
             1 for each amino acid (a vector that sums to 20), by default
             False
-        fillna : bool, optional
-            When True will fill NaNs according to a unifrom distribution,
-            by default False
+        pseudocount : int, optional
+            Pseudocount correction for normalized codon frequencies, by
+            default 1
 
         Returns
         -------
@@ -146,15 +147,11 @@ class CodonCounter(object):
                 stats = stats.loc[stats.index.get_level_values(f'aa{k}') != '*']
 
         if normed:
+            if pseudocount:
+                stats += pseudocount
             stats = stats / stats.groupby(aa_levels).sum()
         if stats.shape[1] == 1:
             stats = stats.iloc[:, 0]
-        if fillna:
-            norm = stats.groupby(aa_levels).size().to_frame('deg').join(stats)
-            if type(stats) == pd.DataFrame:
-                stats = stats.apply(lambda x: x.fillna(1 / norm['deg']))
-            else:
-                stats = stats.fillna(1 / norm['deg'])
 
         stats = stats.reorder_levels(aa_levels + cod_levels).sort_index()
         if self.k_mer == 1:
@@ -210,7 +207,7 @@ class NucleotideCounter(object):
         return pd.Series(Counter(
             [seq[i:i+self.k_mer] for i in range(last_pos)]))
 
-    def get_table(self, normed=False):
+    def get_table(self, normed=False, pseudocount=1):
         """
         Return nucleotide counts as a Series (for a single summary) or
         DataFrame (for multiple summaries, when `sum_seqs` is False),
@@ -221,6 +218,9 @@ class NucleotideCounter(object):
         normed : bool, optional
             Determines whether nucleotide counts will be normalized to sum
             to 1, by default False
+        pseudocount : int, optional
+            Pseudocount correction for normalized nucleotide frequencies,
+            by default 1
 
         Returns
         -------
@@ -228,7 +228,10 @@ class NucleotideCounter(object):
             Neltodie k-mer counts (or frequencies) with k-mers as index,
             and counts as values.
         """
+        stats = self.counts.copy()
         if normed:
-            return self.counts / self.counts.sum()
+            if pseudocount:
+                stats += pseudocount
+            return stats / stats.sum()
         else:
-            return self.counts
+            return stats

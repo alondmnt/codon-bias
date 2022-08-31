@@ -135,7 +135,7 @@ class CodonUsageFrequency(PairwiseScore):
         if not self.synonymous:
             return counts.get_codon_table(normed=True).T.values.astype(np.float32)
 
-        weights = counts.get_aa_table(normed=True, fillna=True)
+        weights = counts.get_aa_table(normed=True, pseudocount=1)
 
         return weights.T.values.astype(np.float32)
 

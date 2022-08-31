@@ -196,7 +196,7 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
         else:
             self.reference = CodonCounter(ref_seq,
                 genetic_code=genetic_code, ignore_stop=ignore_stop)
-        self.reference = self.reference.get_aa_table(normed=True, fillna=True)
+        self.reference = self.reference.get_aa_table(normed=True, pseudocount=1)
 
     def _calc_score(self, seq):
         counts = CodonCounter(seq,
