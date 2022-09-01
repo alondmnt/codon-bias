@@ -71,6 +71,8 @@ class CodonCounter(object):
         """
         Return codon counts as a Series (for a single summary) or
         DataFrame (for multiple summaries, when `sum_seqs` is False).
+        Normalized frequencies (when `normed`=True) are corrected by
+        default using pseudocounts.
 
         Parameters
         ----------
@@ -113,7 +115,9 @@ class CodonCounter(object):
         """
         Return codon counts as a Series (for a single summary) or
         DataFrame (for multiple summaries, when `sum_seqs` is False),
-        indexed by the codon and the encoded amino acid.
+        indexed by the codon and the encoded amino acid. Normalized
+        frequencies (when `normed`=True) are corrected by default using
+        pseudocounts.
 
         Parameters
         ----------
@@ -211,7 +215,8 @@ class NucleotideCounter(object):
         """
         Return nucleotide counts as a Series (for a single summary) or
         DataFrame (for multiple summaries, when `sum_seqs` is False),
-        indexed by the nucletoide k-mer.
+        indexed by the nucletoide k-mer. Normalized frequencies (when
+        `normed`=True) are corrected by default using pseudocounts.
 
         Parameters
         ----------

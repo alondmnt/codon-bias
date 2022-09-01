@@ -107,6 +107,7 @@ class VectorScore(object):
 class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
     """
     Frequency of Optimal Codons (FOP, Ikemura, J Mol Biol, 1981).
+
     This model determines the optimal codons for each amino acid based
     on their frequency in the given set of reference sequences
     `ref_seq`. Multiple codons may be selected as optimal based on
@@ -152,6 +153,7 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
 class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
     """
     Relative Synonymous Codon Usage (RSCU, Sharp & Li, NAR, 1986).
+
     This model measures the deviation of synonymous codon usage from
     uniformity and returns for each codon the ratio between its
     observed frequency and its expected frequency if synonymous codons
@@ -249,6 +251,7 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
 class CodonAdaptationIndex(ScalarScore, VectorScore):
     """
     Codon Adaptation Index (CAI, Sharp & Li, NAR, 1987).
+
     This model determines the level of optimality of codons based on
     their frequency in the given set of reference sequences `ref_seq`.
     For each amino acid, the most frequent synonymous codon receives
@@ -292,6 +295,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
 class EffectiveNumberOfCodons(ScalarScore):
     """
     Effective Number of Codons (ENC, Wright, Gene, 1990).
+
     This model measures the deviation of synonymous codon usage from
     uniformity based on a statistical model analogous to the effective
     number of alleles in genetics. The score for a sequence is the
@@ -337,6 +341,7 @@ class EffectiveNumberOfCodons(ScalarScore):
 class TrnaAdaptationIndex(ScalarScore, VectorScore):
     """
     tRNA Adaptation Index (tAI, dos Reis, Savva & Wernisch, NAR, 2004).
+
     This model measures translational efficiency based on the
     availablity of tRNAs (approximated by the gene copy number of each
     tRNA species), and the efficiency of coupling between tRNAs and
@@ -452,8 +457,8 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
 class RelativeCodonBiasScore(ScalarScore, VectorScore):
     """
-    Relative Codon Bias Score (RCBS, Roymondal, Das & Sahoo, DNA
-    Research, 2009).
+    Relative Codon Bias Score (RCBS, Roymondal, Das & Sahoo, DNA Research, 2009).
+
     This model measures the deviation of codon usage from a background
     distribution and computes for each codon the observed-to-expected
     ratio. The background distribution is estimated for each sequence

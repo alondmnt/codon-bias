@@ -49,8 +49,9 @@ def geomean(log_weights, counts):
 
 
 def mean(weights, counts):
-    """ Compute the arithmetic mean based on codon scores given in
-        `weights`, and codon counts given in `counts`.
+    """
+    Compute the arithmetic mean based on codon scores given in
+    `weights`, and codon counts given in `counts`.
 
     Parameters
     ----------
