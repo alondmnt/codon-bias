@@ -81,7 +81,7 @@ class CodonCounter(object):
             1, by default False
         pseudocount : int, optional
             Pseudocount correction for normalized codon frequencies, by
-            default 0
+            default 1
 
         Returns
         -------

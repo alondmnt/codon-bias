@@ -128,15 +128,21 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by
         default True
+    pseudocount : int, optional
+        Pseudocount correction for normalized codon frequencies. this is
+        effective when `ref_seq` contains few short sequences. by default 1
     """
-    def __init__(self, ref_seq, thresh=0.95, genetic_code=1, ignore_stop=True):
+    def __init__(self, ref_seq, thresh=0.95, genetic_code=1,
+                 ignore_stop=True, pseudocount=1):
         self.thresh = thresh
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
+        self.pseudocount = pseudocount
 
         self.weights = CodonCounter(ref_seq,
             genetic_code=genetic_code, ignore_stop=ignore_stop)\
-            .get_aa_table().groupby('aa').apply(lambda x: x / x.max())
+            .get_aa_table(normed=True, pseudocount=pseudocount)\
+            .groupby('aa').apply(lambda x: x / x.max())
         self.weights[self.weights >= self.thresh] = 1  # optimal
         self.weights[self.weights < self.thresh] = 0  # non-optimal
         self.weights = self.weights.droplevel('aa')
@@ -185,12 +191,17 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by
         default True
+    pseudocount : int, optional
+        Pseudocount correction for normalized codon frequencies, by
+        default 1
     """
-    def __init__(self, ref_seq=None, directional=False, mean='geometric', genetic_code=1, ignore_stop=True):
+    def __init__(self, ref_seq=None, directional=False, mean='geometric',
+                 genetic_code=1, ignore_stop=True, pseudocount=1):
         self.directional = directional
         self.mean = mean
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
+        self.pseudocount = pseudocount
 
         if ref_seq is None:
             self.reference = CodonCounter('',
@@ -198,7 +209,7 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
         else:
             self.reference = CodonCounter(ref_seq,
                 genetic_code=genetic_code, ignore_stop=ignore_stop)
-        self.reference = self.reference.get_aa_table(normed=True, pseudocount=1)
+        self.reference = self.reference.get_aa_table(normed=True, pseudocount=pseudocount)
 
     def _calc_score(self, seq):
         counts = CodonCounter(seq,
@@ -236,7 +247,7 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
     def _calc_weights(self, seq):
         P = CodonCounter(seq, sum_seqs=False,
             genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)\
-            .get_aa_table(normed=True)
+            .get_aa_table(normed=True, pseudocount=self.pseudocount)
         # codon weights
         if self.directional:
             D = np.maximum(
@@ -272,14 +283,19 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by
         default True
+    pseudocount : int, optional
+        Pseudocount correction for normalized codon frequencies. this is
+        effective when `ref_seq` contains few short sequences. by default 1
     """
-    def __init__(self, ref_seq, genetic_code=1, ignore_stop=True):
+    def __init__(self, ref_seq, genetic_code=1, ignore_stop=True, pseudocount=1):
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
+        self.pseudocount = pseudocount
 
         self.weights = CodonCounter(ref_seq,
             genetic_code=genetic_code, ignore_stop=ignore_stop)\
-            .get_aa_table().groupby('aa').apply(lambda x: x / x.max())
+            .get_aa_table(normed=True, pseudocount=pseudocount)\
+            .groupby('aa').apply(lambda x: x / x.max())
         self.weights = self.weights.droplevel('aa')
         self.log_weights = np.log(self.weights)
 
@@ -494,12 +510,17 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by
         default True
+    pseudocount : int, optional
+        Pseudocount correction for normalized codon frequencies, by
+        default 1
     """
-    def __init__(self, directional=False, mean='geometric', genetic_code=1, ignore_stop=True):
+    def __init__(self, directional=False, mean='geometric',
+                 genetic_code=1, ignore_stop=True, pseudocount=1):
         self.directional = directional
         self.mean = mean
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
+        self.pseudocount = pseudocount
 
     def _calc_score(self, seq):
         counts = CodonCounter(seq,
@@ -524,7 +545,7 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
         # background probabilities
         BCC = self._calc_BCC(self._calc_BNC(seq))
         # observed probabilities
-        P = counts.get_codon_table(normed=True)
+        P = counts.get_codon_table(normed=True, pseudocount=self.pseudocount)
         # codon weights
         if self.directional:
             D = np.maximum(P / BCC, BCC / P)

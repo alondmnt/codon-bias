@@ -116,14 +116,19 @@ class CodonUsageFrequency(PairwiseScore):
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by
         default True
+    pseudocount : int, optional
+        Pseudocount correction for normalized codon frequencies, by
+        default 1
     n_jobs : _type_, optional
         Number of processes to use for matrix computation, by default None
     """
-    def __init__(self, synonymous=False, genetic_code=1, ignore_stop=False, n_jobs=None):
+    def __init__(self, synonymous=False, genetic_code=1, ignore_stop=False,
+                 pseudocount=1, n_jobs=None):
         super().__init__(n_jobs=n_jobs)
         self.synonymous = synonymous
         self.genetic_code = genetic_code
         self.ignore_stop = ignore_stop
+        self.pseudocount = pseudocount
 
     def _calc_weights(self, seqs):
         if isinstance(seqs, str):
@@ -133,9 +138,10 @@ class CodonUsageFrequency(PairwiseScore):
             ignore_stop=self.ignore_stop)
 
         if not self.synonymous:
-            return counts.get_codon_table(normed=True).T.values.astype(np.float32)
+            return counts.get_codon_table(normed=True, pseudocount=self.pseudocount)\
+                .T.values.astype(np.float32)
 
-        weights = counts.get_aa_table(normed=True, pseudocount=1)
+        weights = counts.get_aa_table(normed=True, pseudocount=self.pseudocount)
 
         return weights.T.values.astype(np.float32)
 
