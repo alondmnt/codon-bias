@@ -135,12 +135,11 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
     def __init__(self, ref_seq, thresh=0.95, genetic_code=1,
                  ignore_stop=True, pseudocount=1):
         self.thresh = thresh
-        self.genetic_code = genetic_code
-        self.ignore_stop = ignore_stop
+        self.counter = CodonCounter(genetic_code=genetic_code,
+                                    ignore_stop=ignore_stop)
         self.pseudocount = pseudocount
 
-        self.weights = CodonCounter(ref_seq,
-            genetic_code=genetic_code, ignore_stop=ignore_stop)\
+        self.weights = self.counter.count(ref_seq)\
             .get_aa_table(normed=True, pseudocount=pseudocount)\
             .groupby('aa').apply(lambda x: x / x.max())
         self.weights[self.weights >= self.thresh] = 1  # optimal
@@ -148,7 +147,7 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         self.weights = self.weights.droplevel('aa')
 
     def _calc_score(self, seq):
-        counts = CodonCounter(seq, genetic_code=self.genetic_code).counts
+        counts = self.counter.count(seq).counts
 
         return mean(self.weights, counts)
 
@@ -199,22 +198,22 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
                  genetic_code=1, ignore_stop=True, pseudocount=1):
         self.directional = directional
         self.mean = mean
-        self.genetic_code = genetic_code
-        self.ignore_stop = ignore_stop
+        self.counter = CodonCounter(sum_seqs=False, genetic_code=genetic_code,
+                                    ignore_stop=ignore_stop)
         self.pseudocount = pseudocount
 
         if ref_seq is None:
-            self.reference = CodonCounter('',
-                genetic_code=genetic_code, ignore_stop=ignore_stop)
+            self.reference = CodonCounter('', genetic_code=genetic_code,
+                                          ignore_stop=ignore_stop)
         else:
-            self.reference = CodonCounter(ref_seq,
-                genetic_code=genetic_code, ignore_stop=ignore_stop)
-        self.reference = self.reference.get_aa_table(normed=True, pseudocount=pseudocount)
+            self.reference = CodonCounter(ref_seq, genetic_code=genetic_code,
+                                          ignore_stop=ignore_stop)
+        self.reference = self.reference.get_aa_table(
+            normed=True, pseudocount=pseudocount)
 
     def _calc_score(self, seq):
-        counts = CodonCounter(seq,
-            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop).counts
         D = self._calc_weights(seq).droplevel('aa')
+        counts = self.counter.counts  # counts have already been prepared in _calc_weights
 
         if self.mean == 'geometric':
             return geomean(np.log(D), counts) - 1
@@ -245,8 +244,7 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
         return self._calc_weights(seq)
 
     def _calc_weights(self, seq):
-        P = CodonCounter(seq, sum_seqs=False,
-            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)\
+        P = self.counter.count(seq)\
             .get_aa_table(normed=True, pseudocount=self.pseudocount)
         # codon weights
         if self.directional:
@@ -288,19 +286,18 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         effective when `ref_seq` contains few short sequences. by default 1
     """
     def __init__(self, ref_seq, genetic_code=1, ignore_stop=True, pseudocount=1):
-        self.genetic_code = genetic_code
-        self.ignore_stop = ignore_stop
+        self.counter = CodonCounter(genetic_code=genetic_code,
+                                    ignore_stop=ignore_stop)
         self.pseudocount = pseudocount
 
-        self.weights = CodonCounter(ref_seq,
-            genetic_code=genetic_code, ignore_stop=ignore_stop)\
+        self.weights = self.counter.count(ref_seq)\
             .get_aa_table(normed=True, pseudocount=pseudocount)\
             .groupby('aa').apply(lambda x: x / x.max())
         self.weights = self.weights.droplevel('aa')
         self.log_weights = np.log(self.weights)
 
     def _calc_score(self, seq):
-        counts = CodonCounter(seq, genetic_code=self.genetic_code).counts
+        counts = self.counter.count(seq).counts
 
         return geomean(self.log_weights, counts)
 
@@ -326,13 +323,11 @@ class EffectiveNumberOfCodons(ScalarScore):
         NCBI genetic code ID, by default 1
     """
     def __init__(self, genetic_code=1):
-        self.genetic_code = genetic_code
-        self.ignore_stop = True  # score is not defined for STOP codons
+        self.counter = CodonCounter(genetic_code=genetic_code,
+                                    ignore_stop=True)  # score is not defined for STOP codons
 
     def _calc_score(self, seq):
-        counts = CodonCounter(seq,
-            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)\
-            .get_aa_table()
+        counts = self.counter.count(seq).get_aa_table()
 
         N = counts.groupby('aa').sum()
         P = counts / N
@@ -407,8 +402,8 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
     """
     def __init__(self, tGCN=None, url=None, genome_id=None, domain=None,
                  prokaryote=False, s_values='dosReis', genetic_code=1):
-        self.ignore_stop = True  # score is not defined for STOP codons
-        self.genetic_code = genetic_code
+        self.counter = CodonCounter(genetic_code=genetic_code,
+                                    ignore_stop=True)  # score is not defined for STOP codons
 
         # tRNA gene copy numbers of the organism
         if url is not None or (genome_id is not None and domain is not None):
@@ -432,9 +427,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
     def _calc_weights(self):
         # init the dataframe
-        weights = CodonCounter('',
-            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)\
-            .get_aa_table().to_frame('count')
+        weights = self.counter.count('').get_aa_table().to_frame('count')
         weights = weights.join(weights.groupby('aa').size().to_frame('deg'))\
             .reset_index().drop(columns=['aa'])[['codon', 'deg']]
         # columns: codon, deg
@@ -463,7 +456,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         return weights
 
     def _calc_score(self, seq):
-        counts = CodonCounter(seq, genetic_code=self.genetic_code).counts
+        counts = self.counter.count(seq).counts
 
         return geomean(self.log_weights, counts)
 
@@ -518,14 +511,13 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
                  genetic_code=1, ignore_stop=True, pseudocount=1):
         self.directional = directional
         self.mean = mean
-        self.genetic_code = genetic_code
-        self.ignore_stop = ignore_stop
         self.pseudocount = pseudocount
+        self.counter = CodonCounter(genetic_code=genetic_code,
+                                    ignore_stop=ignore_stop)
 
     def _calc_score(self, seq):
-        counts = CodonCounter(seq,
-            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop).counts
         D = self._calc_weights(seq)
+        counts = self.counter.counts  # counts have already been prepared in _calc_weights
 
         if self.mean == 'geometric':
             return geomean(np.log(D), counts) - 1
@@ -540,8 +532,7 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
         return D.reindex(self._get_codon_vector(seq)).values
 
     def _calc_weights(self, seq):
-        counts = CodonCounter(seq,
-            genetic_code=self.genetic_code, ignore_stop=self.ignore_stop)
+        counts = self.counter.count(seq)
         # background probabilities
         BCC = self._calc_BCC(self._calc_BNC(seq))
         # observed probabilities

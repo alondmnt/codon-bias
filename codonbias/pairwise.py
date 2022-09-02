@@ -99,12 +99,14 @@ class PairwiseScore(object):
 
 class CodonUsageFrequency(PairwiseScore):
     """
-    Codon Usage Frequency (CUFS, Diament, Pinter & Tuller, Nat
-    Commun, 2014).
+    Codon Usage Frequency (CUFS, Diament, Pinter & Tuller, Nature
+    Communications, 2014).
+
     This is a distance metric between pairs of sequences based on their
     distribution of codons. It employs a distance metric for probability
     distrbutions (Endres & Schindelin, 2003) that is based on KL
-    divergence.
+    divergence. The original implementation used the parameter
+    `pseudocount`=0.
 
     Parameters
     ----------
@@ -126,22 +128,22 @@ class CodonUsageFrequency(PairwiseScore):
                  pseudocount=1, n_jobs=None):
         super().__init__(n_jobs=n_jobs)
         self.synonymous = synonymous
-        self.genetic_code = genetic_code
-        self.ignore_stop = ignore_stop
+        self.counter = CodonCounter(sum_seqs=False, genetic_code=genetic_code,
+                                    ignore_stop=ignore_stop)
         self.pseudocount = pseudocount
 
     def _calc_weights(self, seqs):
         if isinstance(seqs, str):
             seqs = [seqs]
-        counts = CodonCounter(seqs,
-            sum_seqs=False, genetic_code=self.genetic_code,
-            ignore_stop=self.ignore_stop)
+        counts = self.counter.count(seqs)
 
         if not self.synonymous:
-            return counts.get_codon_table(normed=True, pseudocount=self.pseudocount)\
+            return counts.get_codon_table(
+                normed=True, pseudocount=self.pseudocount)\
                 .T.values.astype(np.float32)
 
-        weights = counts.get_aa_table(normed=True, pseudocount=self.pseudocount)
+        weights = counts.get_aa_table(
+            normed=True, pseudocount=self.pseudocount)
 
         return weights.T.values.astype(np.float32)
 
