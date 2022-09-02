@@ -16,8 +16,8 @@ class CodonCounter(object):
 
     Parameters
     ----------
-    seqs : str, or iterable of str
-        DNA sequence, or an iterable of ones.
+    seqs : str, or iterable of str, optional
+        DNA sequence, or an iterable of ones. by default None
     k_mer : int, optional
         Determines the length of the k-mer to base statistics on, by
         default 1
@@ -30,14 +30,34 @@ class CodonCounter(object):
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by default True
     """
-    def __init__(self, seqs, k_mer=1, sum_seqs=True, genetic_code=1, ignore_stop=True):
+    def __init__(self, seqs=None, k_mer=1, sum_seqs=True, genetic_code=1, ignore_stop=True):
         self.k_mer = k_mer
         self.sum_seqs = sum_seqs
         self.genetic_code = str(genetic_code)
         self.ignore_stop = ignore_stop
+        if seqs is not None:
+            self.count(seqs)
+
+    def count(self, seqs):
+        """
+        Update the CodonCounter object with the codon counts of the given
+        sequence(s).
+
+        Parameters
+        ----------
+        seqs : str, or iterable of str
+            DNA sequence, or an iterable of ones. by default None
+
+        Returns
+        -------
+        CodonCounter
+            CodonCounter object (self) with updated counts
+        """
         self.counts = self._format_counts(self._count(seqs))
         if self.counts.ndim == 1:
             self.counts = self.counts.rename('count')
+
+        return self
 
     def _count(self, seqs):
         if isinstance(seqs, str):
@@ -223,16 +243,35 @@ class NucleotideCounter(object):
         their statistics will be summed, otherwise separate statistics
         will be kept in a table. by default True
     """
-    def __init__(self, seqs, k_mer=1, sum_seqs=True):
+    def __init__(self, seqs=None, k_mer=1, sum_seqs=True):
         self.k_mer = k_mer
         self.sum_seqs = sum_seqs
+        if seqs is not None:
+            self.count(seqs)
 
+    def count(self, seqs):
+        """
+        Update the NucleotideCounter object with the nucleotide counts of
+        the given sequence(s).
+
+        Parameters
+        ----------
+        seqs : str, or iterable of str
+            DNA sequence, or an iterable of ones. by default None
+
+        Returns
+        -------
+        NucleotideCounter
+            NucleotideCounter object (self) with updated counts
+        """
         self.counts = self._count(seqs)
         self.counts = self.counts.loc[
             self.counts.index.str.contains('^[ACGT]+$', regex=True)]\
             .sort_index()
         if self.counts.ndim == 1:
             self.counts = self.counts.rename('count')
+
+        return self
 
     def _count(self, seqs):
         if isinstance(seqs, str):
