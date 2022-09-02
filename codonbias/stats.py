@@ -58,6 +58,7 @@ class CodonCounter(object):
 
     def _format_counts(self, counts):
         if self.k_mer == 1:
+            counts.index.name = 'codon'
             return counts
 
         counts.index = pd.MultiIndex.from_arrays([
@@ -67,7 +68,7 @@ class CodonCounter(object):
 
         return counts
 
-    def get_codon_table(self, normed=False, pseudocount=1):
+    def get_codon_table(self, normed=False, pseudocount=1, nonzero=False):
         """
         Return codon counts as a Series (for a single summary) or
         DataFrame (for multiple summaries, when `sum_seqs` is False).
@@ -89,15 +90,14 @@ class CodonCounter(object):
             Codon counts (or frequencies) with codons as index, and counts
             as values.
         """
-        # join genetic code tables for each codon in k-mer
-        stats = self.counts
-        for k in range(self.k_mer):
-            stats = gc[[self.genetic_code]].rename_axis(index=f'codon{k}')\
-                .join(stats).fillna(0.)
-            if self.ignore_stop:
-                stats = stats.loc[stats[self.genetic_code] != '*']
-            stats = stats.drop(columns=self.genetic_code)
+        if not hasattr(self, 'template_cod'):
+            self.template_cod = self._init_table(keep_aa=False)
 
+        stats = self.template_cod.join(self.counts)\
+            .fillna(0).drop(columns=['dummy'])
+
+        if nonzero:
+            stats = stats[stats != 0].dropna(how='all')
         if normed:
             if pseudocount:
                 stats += pseudocount
@@ -105,13 +105,15 @@ class CodonCounter(object):
         if stats.shape[1] == 1:
             stats = stats.iloc[:, 0]
 
+        if self.k_mer > 1:
+            stats = stats.reorder_levels(self.template_cod.index.names)
         stats = stats.sort_index()
         if self.k_mer == 1:
             stats = stats.rename_axis(index='codon')
 
         return stats
 
-    def get_aa_table(self, normed=False, pseudocount=1):
+    def get_aa_table(self, normed=False, pseudocount=1, nonzero=False):
         """
         Return codon counts as a Series (for a single summary) or
         DataFrame (for multiple summaries, when `sum_seqs` is False),
@@ -135,31 +137,70 @@ class CodonCounter(object):
             Codon counts (or frequencies) with amino acids and codons as
             index, and counts as values.
         """
-        # join genetic code tables for each codon in k-mer
-        stats = self.counts
-        aa_levels = []
-        cod_levels = []
-        for k in range(self.k_mer):
-            aa_levels.append(f'aa{k}')
-            cod_levels.append(f'codon{k}')
-            stats = gc[[self.genetic_code]]\
-                .rename(columns={self.genetic_code: f'aa{k}'})\
-                .rename_axis(index=f'codon{k}')\
-                .join(stats).fillna(0.)\
-                .set_index(f'aa{k}', append=True)
-            if self.ignore_stop:
-                stats = stats.loc[stats.index.get_level_values(f'aa{k}') != '*']
+        if not hasattr(self, 'template_aa'):
+            self.template_aa = self._init_table(keep_aa=True)
 
+        levels = self.template_aa.index.names
+        stats = self.template_aa.join(self.counts)\
+            .fillna(0).drop(columns=['dummy'])
+
+        if nonzero:
+            stats = stats[stats != 0].dropna(how='all')
         if normed:
             if pseudocount:
                 stats += pseudocount
+            aa_levels = [l for l in levels if 'aa' in l]
             stats = stats / stats.groupby(aa_levels).sum()
         if stats.shape[1] == 1:
             stats = stats.iloc[:, 0]
 
-        stats = stats.reorder_levels(aa_levels + cod_levels).sort_index()
+        stats = stats.reorder_levels(levels).sort_index()
         if self.k_mer == 1:
             stats = stats.rename_axis(index=['aa', 'codon'])
+
+        return stats
+
+    def _init_table(self, keep_aa=True):
+        """
+        Helper function for initializing codon table templates. The
+        template will contain all possible combinations of k-mer codons
+        as its index.
+
+        Parameters
+        ----------
+        keep_aa : bool, optional
+            Whether to include amino acids in the index, by default True
+
+        Returns
+        -------
+        pandas.DataFrame
+            A dataframe with a `dummy` column
+        """
+        code = gc[[self.genetic_code]].reset_index().assign(dummy=1)\
+            .rename(columns={self.genetic_code: 'aa'})
+        if self.ignore_stop:
+            code = code.loc[code['aa'] != '*']
+        levels = ['aa', 'codon']
+        if not keep_aa:
+            code = code.drop(columns=['aa'])
+            levels = 'codon'
+
+        if self.k_mer == 1:
+            return code.set_index(levels)
+
+        stats = code.rename(columns={'codon': f'codon0',
+                                     'aa': f'aa0'},
+                            errors='ignore')
+
+        for k in range(self.k_mer - 1):
+            stats = code.rename(columns={'codon': f'codon{k+1}',
+                                         'aa': f'aa{k+1}'},
+                                errors='ignore')\
+                .merge(stats, on='dummy', how='left')
+
+        levels = [f'aa{k}' for k in range(self.k_mer) if keep_aa] + \
+            [f'codon{k}' for k in range(self.k_mer)]
+        stats = stats.set_index(levels)
 
         return stats
 
