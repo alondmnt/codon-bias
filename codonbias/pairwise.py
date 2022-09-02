@@ -113,6 +113,9 @@ class CodonUsageFrequency(PairwiseScore):
     synonymous : bool, optional
         When True snynomous codon frequencies are normalized to sum to 1
         for each amino acid (synCUFS), by default False
+    k_mer : int, optional
+        Determines the length of the codon k-mer to base statistics on, by
+        default 1
     genetic_code : int, optional
         NCBI genetic code ID, by default 1
     ignore_stop : bool, optional
@@ -124,11 +127,12 @@ class CodonUsageFrequency(PairwiseScore):
     n_jobs : _type_, optional
         Number of processes to use for matrix computation, by default None
     """
-    def __init__(self, synonymous=False, genetic_code=1, ignore_stop=False,
-                 pseudocount=1, n_jobs=None):
+    def __init__(self, synonymous=False, k_mer=1, genetic_code=1,
+                 ignore_stop=False, pseudocount=1, n_jobs=None):
         super().__init__(n_jobs=n_jobs)
         self.synonymous = synonymous
-        self.counter = CodonCounter(sum_seqs=False, genetic_code=genetic_code,
+        self.counter = CodonCounter(sum_seqs=False, k_mer=k_mer,
+                                    genetic_code=genetic_code,
                                     ignore_stop=ignore_stop)
         self.pseudocount = pseudocount
 
