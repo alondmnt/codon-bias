@@ -100,8 +100,8 @@ class VectorScore(object):
     def _calc_vector(self, seq):
         raise Exception('not implemented')
 
-    def _get_codon_vector(self, seq):
-        return [seq[i:i+3] for i in range(0, len(seq), 3)]
+    def _get_codon_vector(self, seq, k_mer=1):
+        return [seq[i:i+3*k_mer] for i in range(0, len(seq), 3)]
 
 
 class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
@@ -462,6 +462,112 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
     def _calc_vector(self, seq):
         return self.weights.reindex(self._get_codon_vector(seq)).values
+
+
+class CodonPairBias(ScalarScore, VectorScore):
+    """
+    Codon Pair Bias (CPB/CPS, Coleman et al., Science 2008).
+
+    This model is extended here to arbitrary codon k-mers. The model
+    calculates the over-/under- represention of codon k-mers compared
+    to a background distribution. Each k-mer receives a weight that is the
+    log-ratio between its observed and expected probabilities. The
+    returned vector for a sequence is an array with the weight of the
+    corresponding codon in each position in the sequence. The score for a
+    sequence is the mean of these weights, and ranges from a negative
+    value (mostly under-represented pairs) to a positive value (mostly
+    over-represented pairs).
+
+    Parameters
+    ----------
+    ref_seq : iterable of str
+        Reference sequences for learning the codon frequencies.
+    k_mer : int, optional
+        Determines the length of the k-mer to base statistics on, by
+        default 2
+    genetic_code : int, optional
+        NCBI genetic code ID, by default 1
+    ignore_stop : bool, optional
+        Whether STOP codons will be discarded from the analysis, by
+        default True
+    pseudocount : int, optional
+        Pseudocount correction for normalized codon frequencies. this is
+        effective when `ref_seq` contains few short sequences. by default 1
+    """
+    def __init__(self, ref_seq, k_mer=2, genetic_code=1,
+                 ignore_stop=True, pseudocount=1):
+        self.counter = CodonCounter(k_mer=k_mer,
+            genetic_code=genetic_code, ignore_stop=ignore_stop)
+        self.k_mer = k_mer
+        self.pseudocount = pseudocount
+        self.weights = self._calc_weights(ref_seq)
+        self.sticky_weights = self.weights.copy()
+        self.sticky_weights.index = self.weights.index.to_series()\
+            .str.join('')
+
+    def _calc_score(self, seq):
+        counts = self.counter.count(seq).counts
+
+        return mean(self.weights, counts)
+
+    def _calc_vector(self, seq):
+        return self.sticky_weights.reindex(
+            self._get_codon_vector(seq, k_mer=self.k_mer)).values
+
+    def _calc_weights(self, seq):
+        """
+        Calculates the Codon Pair Score (CPS) for each pair (or k-mer).
+        That is, the log-ratios of observed over expected frequencies.
+        """
+        weights = self.counter.count(seq).get_aa_table().to_frame('count')
+        aa_levels = [n for n in weights.index.names if 'aa' in n]
+        cod_levels = [n for n in weights.index.names if 'codon' in n]
+
+        weights['count'] += self.pseudocount
+        weights = self._calc_freq(weights, 'aa')
+        weights = self._calc_freq(weights, 'codon')
+
+        weights = self._calc_enrichment(weights)\
+            .droplevel(aa_levels).reorder_levels(cod_levels)
+
+        return weights['log_ratio']
+
+    def _calc_freq(self, counts, word='aa'):
+        levels = [n for n in counts.index.names if word in n]
+
+        # calculate k-mer frequencies
+        freq_kmer = counts.groupby(levels)['count'].sum()
+        freq_kmer /= freq_kmer.sum()
+        counts = counts.join(freq_kmer.to_frame(f'freq_{word}_mer'))
+
+        # calculate global frequencies of each "word"
+        glob_count = []
+        for l in levels:
+            glob_count.append(counts.groupby(l)['count'].sum())
+        glob_count = pd.concat(glob_count, axis=1).sum(axis=1)
+        glob_count /= glob_count.sum()
+
+        # join with the counts dataframe
+        for l in levels:
+            counts = counts.join(
+                glob_count.rename_axis(index=l).to_frame(l))
+
+        # calculate independent joint probabilities
+        counts = counts.join(counts[levels].prod(axis=1)
+                             .to_frame(f'freq_{word}_ind'))
+
+        return counts
+
+    def _calc_enrichment(self, freqs):
+        """
+        Calculates the log-ratio between observed k-mer frequencies and
+        expected frequencies under the assumption that k-mers are
+        distributed independently.
+        """
+        freqs['log_ratio'] = \
+            np.log(freqs['freq_codon_mer'] / freqs['freq_codon_ind']
+                   * freqs['freq_aa_ind'] / freqs['freq_aa_mer'])
+        return freqs
 
 
 class RelativeCodonBiasScore(ScalarScore, VectorScore):
