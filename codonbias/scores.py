@@ -272,10 +272,16 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
     weights, and ranges from 0 (strong rare codon bias) to 1 (strong
     frequent codon bias).
 
+    This implementation extends the model to arbitrary codon k-mers
+    using the `k_mer` parameter.
+
     Parameters
     ----------
     ref_seq : iterable of str
         Reference sequences for learning the codon frequencies.
+    k_mer : int, optional
+        Determines the length of the k-mer to base statistics on, by
+        default 1
     genetic_code : int, optional
         NCBI genetic code ID, by default 1
     ignore_stop : bool, optional
@@ -285,16 +291,15 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         Pseudocount correction for normalized codon frequencies. this is
         effective when `ref_seq` contains few short sequences. by default 1
     """
-    def __init__(self, ref_seq, genetic_code=1, ignore_stop=True, pseudocount=1):
-        self.counter = CodonCounter(genetic_code=genetic_code,
+    def __init__(self, ref_seq, k_mer=1, genetic_code=1,
+                 ignore_stop=True, pseudocount=1):
+        self.counter = CodonCounter(k_mer=k_mer,
+                                    genetic_code=genetic_code,
                                     ignore_stop=ignore_stop)
+        self.k_mer = k_mer
         self.pseudocount = pseudocount
 
-        self.weights = self.counter.count(ref_seq)\
-            .get_aa_table(normed=True, pseudocount=pseudocount)\
-            .groupby('aa').apply(lambda x: x / x.max())
-        self.weights = self.weights.droplevel('aa')
-        self.log_weights = np.log(self.weights)
+        self._calc_weights(ref_seq)
 
     def _calc_score(self, seq):
         counts = self.counter.count(seq).counts
@@ -302,7 +307,21 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         return geomean(self.log_weights, counts)
 
     def _calc_vector(self, seq):
-        return self.weights.reindex(self._get_codon_vector(seq)).values
+        return self.sticky_weights.reindex(
+            self._get_codon_vector(seq, k_mer=self.k_mer)).values
+
+    def _calc_weights(self, seqs):
+        self.weights = self.counter.count(seqs)\
+            .get_aa_table(normed=True, pseudocount=self.pseudocount)
+
+        aa_levels = [n for n in self.weights.index.names if 'aa' in n]
+        self.weights = self.weights.groupby(aa_levels)\
+            .apply(lambda x: x / x.max()).droplevel(aa_levels)
+
+        self.log_weights = np.log(self.weights)
+        self.sticky_weights = self.weights.copy()
+        self.sticky_weights.index = self.weights.index.to_series()\
+            .str.join('')
 
 
 class EffectiveNumberOfCodons(ScalarScore):
@@ -466,14 +485,14 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
 class CodonPairBias(ScalarScore, VectorScore):
     """
-    Codon Pair Bias (CPB/CPS, Coleman et al., Science 2008).
+    Codon Pair Bias (CPB/CPS, Coleman et al., Science, 2008).
 
     This model is extended here to arbitrary codon k-mers. The model
     calculates the over-/under- represention of codon k-mers compared
     to a background distribution. Each k-mer receives a weight that is the
     log-ratio between its observed and expected probabilities. The
     returned vector for a sequence is an array with the weight of the
-    corresponding codon in each position in the sequence. The score for a
+    corresponding k-mer in each position in the sequence. The score for a
     sequence is the mean of these weights, and ranges from a negative
     value (mostly under-represented pairs) to a positive value (mostly
     over-represented pairs).
@@ -500,10 +519,8 @@ class CodonPairBias(ScalarScore, VectorScore):
             genetic_code=genetic_code, ignore_stop=ignore_stop)
         self.k_mer = k_mer
         self.pseudocount = pseudocount
-        self.weights = self._calc_weights(ref_seq)
-        self.sticky_weights = self.weights.copy()
-        self.sticky_weights.index = self.weights.index.to_series()\
-            .str.join('')
+
+        self._calc_weights(ref_seq)
 
     def _calc_score(self, seq):
         counts = self.counter.count(seq).counts
@@ -530,7 +547,10 @@ class CodonPairBias(ScalarScore, VectorScore):
         weights = self._calc_enrichment(weights)\
             .droplevel(aa_levels).reorder_levels(cod_levels)
 
-        return weights['log_ratio']
+        self.weights = weights['log_ratio']
+        self.sticky_weights = self.weights.copy()
+        self.sticky_weights.index = self.weights.index.to_series()\
+            .str.join('')
 
     def _calc_freq(self, counts, word='aa'):
         levels = [n for n in counts.index.names if word in n]
