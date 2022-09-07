@@ -1,4 +1,5 @@
 from collections import Counter
+from itertools import product
 import os
 
 import pandas as pd
@@ -265,9 +266,7 @@ class NucleotideCounter(object):
             NucleotideCounter object (self) with updated counts
         """
         self.counts = self._count(seqs)
-        self.counts = self.counts.loc[
-            self.counts.index.str.contains('^[ACGT]+$', regex=True)]\
-            .sort_index()
+        self.counts = self.counts.reindex(self._init_table()).fillna(0)
         if self.counts.ndim == 1:
             self.counts = self.counts.rename('count')
 
@@ -320,3 +319,7 @@ class NucleotideCounter(object):
             return stats / stats.sum()
         else:
             return stats
+
+    def _init_table(self):
+        return [''.join(comb) 
+                for comb in list(product(*(self.k_mer*['ACGT'])))]
