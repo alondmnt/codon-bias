@@ -114,7 +114,7 @@ def fetch_GCN_from_GtRNAdb(url=None, genome=None, domain=None):
     tables = pd.read_html(url)
 
     return pd.concat(
-        [process_GtRNAdb_table(t) for t in tables[2:]],
+        [process_GtRNAdb_table(t) for t in tables[-4:]],
         axis=0, ignore_index=True).sort_values('anti_codon')
 
 
