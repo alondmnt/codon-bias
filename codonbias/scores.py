@@ -193,6 +193,11 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
     pseudocount : int, optional
         Pseudocount correction for normalized codon frequencies, by
         default 1
+
+    See Also
+    --------
+    scores.EffectiveNumberOfCodons
+    scores.RelativeCodonBiasScore
     """
     def __init__(self, ref_seq=None, directional=False, mean='geometric',
                  genetic_code=1, ignore_stop=True, pseudocount=1):
@@ -331,34 +336,62 @@ class EffectiveNumberOfCodons(ScalarScore):
     This model measures the deviation of synonymous codon usage from
     uniformity based on a statistical model analogous to the effective
     number of alleles in genetics. The score for a sequence is the
-    effective number of codon in use, and ranges from 20 (very strong
+    effective number of codons in use, and ranges from 20 (very strong
     bias: a single codon per amino acid) to 61 (uniform use of all
     codons). Thus, this score is expected to be negatively correlated
     with most other codon bias measures.
 
+    When `bg_correction` is True, a background correction procedure is
+    performed as proposed by Novembre (MBE, 2002). This procedure
+    estimates the background codon composition of each sequence using
+    the independent probabilities of observing each of the 4 bases in
+    the 3 codon positions. This implementation learns the nucleotide
+    probabilities from the provided coding sequence.
+
     Parameters
     ----------
+    bg_correction : bool, optional
+        Background correction based on Novembre (MBE, 2002), by default
+        False
     genetic_code : int, optional
         NCBI genetic code ID, by default 1
+
+    See Also
+    --------
+    scores.RelativeSynonymousCodonUsage
+    scores.RelativeCodonBiasScore
     """
-    def __init__(self, genetic_code=1):
+    def __init__(self, bg_correction=False, genetic_code=1):
+        self.bg_correction = bg_correction
         self.counter = CodonCounter(genetic_code=genetic_code,
                                     ignore_stop=True)  # score is not defined for STOP codons
+
+        self.template = self.counter.count('').get_aa_table().to_frame()
+        self.aa_deg = self.template.groupby('aa').size()
+
+        self.BCC_unif = self._calc_BCC(self._calc_BNC(''))
 
     def _calc_score(self, seq):
         counts = self.counter.count(seq).get_aa_table()
 
         N = counts.groupby('aa').sum()
         P = counts / N
-        F = ((N * (P**2).groupby('aa').sum() - 1) / (N-1)).to_frame('F')
-        F['deg'] = P.groupby('aa').size()
+
+        if self.bg_correction:
+            BCC = self._calc_BCC(self._calc_BNC(seq))
+        else:
+            BCC = self.BCC_unif
+        chi2 = N * ((P - BCC)**2 / BCC).sum()  # Novembre 2002
+        F = ((chi2 + N - self.aa_deg) / (N - 1) / self.aa_deg).to_frame('F')
+
+        F['deg'] = self.aa_deg
         deg_count = F.groupby('deg').size().to_frame('deg_count')
 
         # at least 2 samples from AA to be included
         F = F.loc[(N > 1) & (F['F'] > 0)].groupby('deg').mean()\
             .join(deg_count, how='right')
 
-        # misssing AA cases
+        # missing AA cases
         miss_3 = np.isnan(F.loc[3, 'F'])
         F['F'] = F['F'].fillna(1/F.index.to_series())  # use 1/deg
         if miss_3:
@@ -366,6 +399,24 @@ class EffectiveNumberOfCodons(ScalarScore):
 
         ENC = (F['deg_count'] / F['F']).sum()
         return min([61., ENC])
+
+    def _calc_BNC(self, seq):
+        """ Compute the background NUCLEOTIDE composition of the sequence. """
+        BNC = NucleotideCounter(seq).get_table(normed=True)
+
+        return BNC
+
+    def _calc_BCC(self, BNC):
+        """ Compute the background CODON composition of the sequence. """
+        BCC = pd.DataFrame(
+            [(c1+c2+c3, BNC[c1] * BNC[c2] * BNC[c3])
+             for c1, c2, c3 in product('ACGT', 'ACGT', 'ACGT')],
+            columns=['codon', 'bcc'])
+        BCC = BCC.set_index('codon')['bcc']
+        BCC = self.template.join(BCC)['bcc']
+        BCC /= BCC.groupby('aa').sum()
+
+        return BCC 
 
 
 class TrnaAdaptationIndex(ScalarScore, VectorScore):
@@ -632,6 +683,11 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
     pseudocount : int, optional
         Pseudocount correction for normalized codon frequencies, by
         default 1
+
+    See Also
+    --------
+    scores.RelativeSynonymousCodonUsage
+    scores.EffectiveNumberOfCodons
     """
     def __init__(self, directional=False, mean='geometric',
                  genetic_code=1, ignore_stop=True, pseudocount=1):
