@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from .stats import CodonCounter
+from .stats import CodonCounter, NucleotideCounter
 from .utils import fetch_GCN_from_GtRNAdb, geomean, mean, reverse_complement
 
 
@@ -673,7 +673,8 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
 
     def _calc_BNC(self, seq):
         """ Compute the background NUCLEOTIDE composition of the sequence. """
-        BNC = pd.concat([pd.Series(Counter(seq[i::3])) for i in range(3)], axis=1)
+        BNC = NucleotideCounter([seq[i::3] for i in range(3)],
+                                sum_seqs=False).get_table()
 
         return BNC
 
