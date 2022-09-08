@@ -196,8 +196,8 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
 
     See Also
     --------
-    scores.EffectiveNumberOfCodons
-    scores.RelativeCodonBiasScore
+    codonbias.scores.RelativeCodonBiasScore
+    codonbias.scores.EffectiveNumberOfCodons
     """
     def __init__(self, ref_seq=None, directional=False, mean='geometric',
                  genetic_code=1, ignore_stop=True, pseudocount=1):
@@ -375,8 +375,8 @@ class EffectiveNumberOfCodons(ScalarScore):
 
     See Also
     --------
-    scores.RelativeSynonymousCodonUsage
-    scores.RelativeCodonBiasScore
+    codonbias.scores.RelativeSynonymousCodonUsage
+    codonbias.scores.RelativeCodonBiasScore
     """
     def __init__(self, bg_correction=False, robust=True,
                  pseudocount=1, mean='weighted', genetic_code=1):
@@ -727,8 +727,8 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
 
     See Also
     --------
-    scores.RelativeSynonymousCodonUsage
-    scores.EffectiveNumberOfCodons
+    codonbias.scores.RelativeSynonymousCodonUsage
+    codonbias.scores.EffectiveNumberOfCodons
     """
     def __init__(self, directional=False, mean='geometric',
                  genetic_code=1, ignore_stop=True, pseudocount=1):
