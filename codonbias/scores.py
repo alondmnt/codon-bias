@@ -346,7 +346,9 @@ class EffectiveNumberOfCodons(ScalarScore):
     estimates the background codon composition of each sequence using
     the independent probabilities of observing each of the 4 bases in
     the 3 codon positions. This implementation learns the nucleotide
-    probabilities from the provided coding sequence.
+    probabilities from the provided coding sequence. However, if the
+    parameter `background` is given to get_score(), this background
+    sequence will be used instead.
 
     Parameters
     ----------
@@ -371,25 +373,27 @@ class EffectiveNumberOfCodons(ScalarScore):
 
         self.BCC_unif = self._calc_BCC(self._calc_BNC(''))
 
-    def _calc_score(self, seq):
+    def _calc_score(self, seq, background=None):
+        if background is None:
+            background = seq
         counts = self.counter.count(seq).get_aa_table()
 
         N = counts.groupby('aa').sum()
         P = counts / N
 
         if self.bg_correction:
-            BCC = self._calc_BCC(self._calc_BNC(seq))
+            BCC = self._calc_BCC(self._calc_BNC(background))
         else:
             BCC = self.BCC_unif
-        chi2 = N * ((P - BCC)**2 / BCC).sum()  # Novembre 2002
+        chi2 = N * ((P - BCC)**2 / BCC).groupby('aa').sum()  # Novembre 2002
         F = ((chi2 + N - self.aa_deg) / (N - 1) / self.aa_deg).to_frame('F')
 
         F['deg'] = self.aa_deg
         deg_count = F.groupby('deg').size().to_frame('deg_count')
 
         # at least 2 samples from AA to be included
-        F = F.loc[(N > 1) & (F['F'] > 0)].groupby('deg').mean()\
-            .join(deg_count, how='right')
+        F = F.loc[(N > 1) & (F['F'] > 1e-6) & np.isfinite(F['F'])]\
+            .groupby('deg').mean().join(deg_count, how='right')
 
         # missing AA cases
         miss_3 = np.isnan(F.loc[3, 'F'])
@@ -398,7 +402,7 @@ class EffectiveNumberOfCodons(ScalarScore):
             F.loc[3, 'F'] = 0.5*(F.loc[2, 'F'] + F.loc[4, 'F'])
 
         ENC = (F['deg_count'] / F['F']).sum()
-        return min([61., ENC])
+        return min([len(P), ENC])
 
     def _calc_BNC(self, seq):
         """ Compute the background NUCLEOTIDE composition of the sequence. """
