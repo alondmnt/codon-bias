@@ -350,11 +350,26 @@ class EffectiveNumberOfCodons(ScalarScore):
     parameter `background` is given to get_score(), this background
     sequence will be used instead.
 
+    The parameters `robust`, `pseudocount` and `mean` introduce additional
+    improvements to the estimation of the effective number as proposed by
+    Sun, Yang & Xia (MBE, 2013). They are activated by default.
+
     Parameters
     ----------
     bg_correction : bool, optional
         Background correction based on Novembre (MBE, 2002), by default
         False
+    robust : bool, optional
+        Robust estimation of F values that is less sensitive to small
+        counts. Proposed improvement by Sun, Yang & Xia (MBE, 2013), by
+        default True
+    pseudocount : int, optional
+        Pseudocounts added to codon statistics. Proposed improvement by
+        Sun, Yang & Xia (MBE, 2013), by default 1
+    mean : {'weighetd', 'unweighted'}, optional
+        Weighted average of F across amino acids by their frequency.
+        Proposed improvement by Sun, Yang & Xia (MBE, 2013), by default
+        'weighetd'
     genetic_code : int, optional
         NCBI genetic code ID, by default 1
 
@@ -363,8 +378,12 @@ class EffectiveNumberOfCodons(ScalarScore):
     scores.RelativeSynonymousCodonUsage
     scores.RelativeCodonBiasScore
     """
-    def __init__(self, bg_correction=False, genetic_code=1):
+    def __init__(self, bg_correction=False, robust=True,
+                 pseudocount=1, mean='weighted', genetic_code=1):
         self.bg_correction = bg_correction
+        self.robust = robust
+        self.pseudocount = pseudocount
+        self.mean = mean
         self.counter = CodonCounter(genetic_code=genetic_code,
                                     ignore_stop=True)  # score is not defined for STOP codons
 
@@ -374,26 +393,44 @@ class EffectiveNumberOfCodons(ScalarScore):
         self.BCC_unif = self._calc_BCC(self._calc_BNC(''))
 
     def _calc_score(self, seq, background=None):
-        if background is None:
-            background = seq
         counts = self.counter.count(seq).get_aa_table()
+        if self.pseudocount:
+            counts += 1  # Sun, Yang & Xia 2013
 
         N = counts.groupby('aa').sum()
         P = counts / N
 
+        if background is None:
+            background = seq
         if self.bg_correction:
             BCC = self._calc_BCC(self._calc_BNC(background))
         else:
             BCC = self.BCC_unif
-        chi2 = N * ((P - BCC)**2 / BCC).groupby('aa').sum()  # Novembre 2002
-        F = ((chi2 + N - self.aa_deg) / (N - 1) / self.aa_deg).to_frame('F')
+
+        if not self.robust:
+            chi2 = N * ((P - BCC)**2 / BCC).groupby('aa').sum()  # Novembre 2002
+            F = ((chi2 + N - self.aa_deg) / (N - 1) / self.aa_deg).to_frame('F')
+            # converges to Wright 1990 for BCC_unif
+        else:
+            chi2 = ((P - BCC)**2 / BCC).groupby('aa').sum()  # modified Novembre 2002
+            F = ((chi2 + 1) / self.aa_deg).to_frame('F')
+            # converges to Sun, Yang & Xia 2013 for BCC_unif, i.e., sum(p**2)
 
         F['deg'] = self.aa_deg
+        F['N'] = N
         deg_count = F.groupby('deg').size().to_frame('deg_count')
 
-        # at least 2 samples from AA to be included
-        F = F.loc[(N > 1) & (F['F'] > 1e-6) & np.isfinite(F['F'])]\
-            .groupby('deg').mean().join(deg_count, how='right')
+        if self.mean == 'unweighted':
+            # at least 2 samples from AA to be included
+            F = F.loc[(N > 1) & (F['F'] > 1e-6) & np.isfinite(F['F'])]\
+                .groupby('deg').mean().join(deg_count, how='right')
+        elif self.mean == 'weighted':
+            # weighted mean: Sun, Yang & Xia 2013
+            F['F'] = F['F'] * F['N']
+            F = F.groupby('deg')['F'].sum() / F.groupby('deg')['N'].sum()
+            F = F.to_frame('F').join(deg_count, how='right')
+        else:
+            raise Exception(f'unknown mean="{self.mean}"')
 
         # missing AA cases
         miss_3 = np.isnan(F.loc[3, 'F'])
