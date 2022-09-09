@@ -394,8 +394,7 @@ class EffectiveNumberOfCodons(ScalarScore):
 
     def _calc_score(self, seq, background=None):
         counts = self.counter.count(seq).get_aa_table()
-        if self.pseudocount:
-            counts += 1  # Sun, Yang & Xia 2013
+        counts += self.pseudocount  # Sun, Yang & Xia 2013
 
         N = counts.groupby('aa').sum()
         P = counts / N
