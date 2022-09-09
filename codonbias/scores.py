@@ -508,6 +508,10 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
     genetic_code : int, optional
         NCBI genetic code ID, by default 1
 
+    See Also
+    --------
+    codonbias.scores.NormalizedTranslationalEfficiency
+
     Notes
     -----
     For species-specific optimization of the tAI model, see:
@@ -792,4 +796,89 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
         BCC = BCC.set_index('codon')['bcc']
         BCC /= BCC.sum()
 
-        return BCC 
+        return BCC
+
+
+class NormalizedTranslationalEfficiency(ScalarScore, VectorScore):
+    """
+    Normalized Translational Efficiency (Pechmann & Frydman, Nat. Struct.
+    Mol. Biol., 2013)
+
+    This models computed a translational efficiency score that takes into
+    account both supply (of tRNAs) and demand (codons being translated).
+    Supply is computed based on the tRNA Adaptation Index (tAI), and
+    demand is computed based on the sum of all codons in the genome
+    weighted by their mRNA abundance (or ribosome occupancy, where
+    available). Each codon receives a weight in [0, 1] that describes its
+    translational efficiency. The returned vector for a sequence is an
+    array with the weight of the corresponding codon in each position in
+    the sequence. The score for a sequence is the geometric mean of these
+    weights, and ranges from 0 (low efficiency) to 1 (high efficiency).
+
+    Parameters
+    ----------
+    ref_seq : iterable os str
+        Demand parameter: Will be used to count the codons across
+        transcripts in a weighted sum
+    mRNA_counts : iterable of float
+        Demand parameter: Will be used in the weighted sum of codons
+        across transcripts
+    tGCN : pandas.DataFrame, optional
+        Supply parameter: tRNA Gene Copy Numbers given as a DataFrame with
+        the columns `anti_codon`, `GCN`, by default None
+    url : str, optional
+        Supply parameter: URL of the relevant page on GtRNAdb, by default
+        None
+    genome_id : str, optional
+        Supply parameter: Genome ID of the organism, by default None
+    domain : str, optional
+        Supply parameter: Taxonomic domain of the organism, by default None
+    prokaryote : bool, optional
+        Supply parameter: Whether the organism is a prokaryote, by default
+        False
+    s_values : {'dosReis', 'Tuller'}, optional
+        Supply parameter: Coefficients of the tRNA-codon efficiency of
+        coupling, by default 'dosReis'
+    genetic_code : int, optional
+        NCBI genetic code ID, by default 1
+
+    See Also
+    --------
+    codonbias.scores.TrnaAdaptationIndex
+    """
+    def __init__(self, ref_seq, mRNA_counts, tGCN=None, url=None, genome_id=None,
+                 domain=None, prokaryote=False, s_values='dosReis',
+                 genetic_code=1):
+        if len(ref_seq) != len(mRNA_counts):
+            raise Exception(
+                f'lengths of ref_seq, mRNA_counts do not match: {len(ref_seq)} != {len(mRNA_counts)}')
+
+        # supply: classical translational efficiency
+        self.tAI = TrnaAdaptationIndex(
+            tGCN=tGCN, url=url, genome_id=genome_id, domain=domain,
+            prokaryote=prokaryote, s_values=s_values,
+            genetic_code=genetic_code)
+
+        # demand: codon usage
+        self.CU = CodonCounter(
+            ref_seq, sum_seqs=False,
+            genetic_code=genetic_code, ignore_stop=True)\
+            .get_codon_table()
+        self.CU = (self.CU * np.array(mRNA_counts)
+                   .reshape(1, -1)).sum(axis=1)  # sum weighted by mRNA counts
+        self.CU = self.CU / self.CU.max()
+
+        self.weights = self.tAI.weights / self.CU
+        self.weights = self.weights / self.weights.max()
+        self.log_weights = np.log(self.weights)
+
+        self.counter = CodonCounter(genetic_code=genetic_code,
+                                    ignore_stop=True)
+
+    def _calc_score(self, seq):
+        counts = self.counter.count(seq).counts
+
+        return geomean(self.log_weights, counts)
+
+    def _calc_vector(self, seq):
+        return self.weights.reindex(self._get_codon_vector(seq)).values
