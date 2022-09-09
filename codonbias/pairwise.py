@@ -131,7 +131,8 @@ class CodonUsageFrequency(PairwiseScore):
                  ignore_stop=False, pseudocount=1, n_jobs=None):
         super().__init__(n_jobs=n_jobs)
         self.synonymous = synonymous
-        self.counter = CodonCounter(sum_seqs=False, k_mer=k_mer,
+        self.counter = CodonCounter(sum_seqs=False,
+                                    k_mer=k_mer, concat_index=True,
                                     genetic_code=genetic_code,
                                     ignore_stop=ignore_stop)
         self.pseudocount = pseudocount

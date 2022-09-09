@@ -298,7 +298,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
     """
     def __init__(self, ref_seq, k_mer=1, genetic_code=1,
                  ignore_stop=True, pseudocount=1):
-        self.counter = CodonCounter(k_mer=k_mer,
+        self.counter = CodonCounter(k_mer=k_mer, concat_index=True,
                                     genetic_code=genetic_code,
                                     ignore_stop=ignore_stop)
         self.k_mer = k_mer
@@ -312,7 +312,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         return geomean(self.log_weights, counts)
 
     def _calc_vector(self, seq):
-        return self.sticky_weights.reindex(
+        return self.weights.reindex(
             self._get_codon_vector(seq, k_mer=self.k_mer)).values
 
     def _calc_weights(self, seqs):
@@ -324,9 +324,6 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
             .apply(lambda x: x / x.max()).droplevel(aa_levels)
 
         self.log_weights = np.log(self.weights)
-        self.sticky_weights = self.weights.copy()
-        self.sticky_weights.index = self.weights.index.to_series()\
-            .str.join('')
 
 
 class EffectiveNumberOfCodons(ScalarScore):
@@ -606,7 +603,7 @@ class CodonPairBias(ScalarScore, VectorScore):
     """
     def __init__(self, ref_seq, k_mer=2, genetic_code=1,
                  ignore_stop=True, pseudocount=1):
-        self.counter = CodonCounter(k_mer=k_mer,
+        self.counter = CodonCounter(k_mer=k_mer, concat_index=True,
             genetic_code=genetic_code, ignore_stop=ignore_stop)
         self.k_mer = k_mer
         self.pseudocount = pseudocount
@@ -619,7 +616,7 @@ class CodonPairBias(ScalarScore, VectorScore):
         return mean(self.weights, counts)
 
     def _calc_vector(self, seq):
-        return self.sticky_weights.reindex(
+        return self.weights.reindex(
             self._get_codon_vector(seq, k_mer=self.k_mer)).values
 
     def _calc_weights(self, seq):
@@ -627,7 +624,11 @@ class CodonPairBias(ScalarScore, VectorScore):
         Calculates the Codon Pair Score (CPS) for each pair (or k-mer).
         That is, the log-ratios of observed over expected frequencies.
         """
-        weights = self.counter.count(seq).get_aa_table().to_frame('count')
+        weights = CodonCounter(seq,
+            k_mer=self.k_mer, concat_index=False,
+            genetic_code=self.counter.genetic_code,
+            ignore_stop=self.counter.ignore_stop)\
+            .get_aa_table().to_frame('count')
         aa_levels = [n for n in weights.index.names if 'aa' in n]
         cod_levels = [n for n in weights.index.names if 'codon' in n]
 
@@ -639,8 +640,7 @@ class CodonPairBias(ScalarScore, VectorScore):
             .droplevel(aa_levels).reorder_levels(cod_levels)
 
         self.weights = weights['log_ratio']
-        self.sticky_weights = self.weights.copy()
-        self.sticky_weights.index = self.weights.index.to_series()\
+        self.weights.index = self.weights.index.to_series()\
             .str.join('')
 
     def _calc_freq(self, counts, word='aa'):

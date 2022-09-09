@@ -31,8 +31,10 @@ class CodonCounter(object):
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by default True
     """
-    def __init__(self, seqs=None, k_mer=1, sum_seqs=True, genetic_code=1, ignore_stop=True):
+    def __init__(self, seqs=None, k_mer=1, sum_seqs=True, concat_index=True,
+                 genetic_code=1, ignore_stop=True):
         self.k_mer = k_mer
+        self.concat_index = concat_index
         self.sum_seqs = sum_seqs
         self.genetic_code = str(genetic_code)
         self.ignore_stop = ignore_stop
@@ -78,8 +80,9 @@ class CodonCounter(object):
              for i in range(0, len(seq), 3)]))
 
     def _format_counts(self, counts):
-        if self.k_mer == 1:
-            counts.index.name = 'codon'
+        counts.index.name = 'codon'
+
+        if self.concat_index:
             return counts
 
         counts.index = pd.MultiIndex.from_arrays([
@@ -126,7 +129,7 @@ class CodonCounter(object):
         if stats.shape[1] == 1:
             stats = stats.iloc[:, 0]
 
-        if self.k_mer > 1:
+        if not self.concat_index and (self.k_mer > 1):
             stats = stats.reorder_levels(self.template_cod.index.names)
         stats = stats.sort_index()
         if self.k_mer == 1:
@@ -219,9 +222,21 @@ class CodonCounter(object):
                                 errors='ignore')\
                 .merge(stats, on='dummy', how='left')
 
-        levels = [f'aa{k}' for k in range(self.k_mer) if keep_aa] + \
-            [f'codon{k}' for k in range(self.k_mer)]
-        stats = stats.set_index(levels)
+        aa_levels = [f'aa{k}' for k in range(self.k_mer) if keep_aa]
+        cod_levels = [f'codon{k}' for k in range(self.k_mer)]
+        stats = stats.set_index(aa_levels + cod_levels)
+
+        if not self.concat_index:
+            return stats
+
+        if keep_aa:
+            stats.index = pd.MultiIndex.from_arrays(
+                [stats.index.droplevel(cod_levels).to_series().str.join(''),
+                 stats.index.droplevel(aa_levels).to_series().str.join('')],
+                names=['aa', 'codon'])
+        else:
+            stats.index = stats.index.to_series().str.join('')
+            stats.index.name = 'codon'
 
         return stats
 
