@@ -804,7 +804,7 @@ class NormalizedTranslationalEfficiency(ScalarScore, VectorScore):
     Normalized Translational Efficiency (Pechmann & Frydman, Nat. Struct.
     Mol. Biol., 2013)
 
-    This models computed a translational efficiency score that takes into
+    This models computes a translational efficiency score that takes into
     account both supply (of tRNAs) and demand (codons being translated).
     Supply is computed based on the tRNA Adaptation Index (tAI), and
     demand is computed based on the sum of all codons in the genome
