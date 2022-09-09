@@ -338,6 +338,10 @@ class EffectiveNumberOfCodons(ScalarScore):
     codons). Thus, this score is expected to be negatively correlated
     with most other codon bias measures.
 
+    The model has also been extended to codon pairs by Alexaki et al.
+    (JMB, 2019). The `k_mer` parameter can be used to calculate ENC for
+    codon pairs as well as longer k-mers.
+
     When `bg_correction` is True, a background correction procedure is
     performed as proposed by Novembre (MBE, 2002). This procedure
     estimates the background codon composition of each sequence using
@@ -349,10 +353,15 @@ class EffectiveNumberOfCodons(ScalarScore):
 
     The parameters `robust`, `pseudocount` and `mean` introduce additional
     improvements to the estimation of the effective number as proposed by
-    Sun, Yang & Xia (MBE, 2013). They are activated by default.
+    Sun, Yang & Xia (MBE, 2013). They are activated by default, and
+    remove, for example, the strong dependency between ENC and sequence
+    length.
 
     Parameters
     ----------
+    k_mer : int, optional
+        Extends the model to codon k-mers. For example, codon pairs, as
+        suggested by Alexaki et al. (JMB, 2019), by default 1
     bg_correction : bool, optional
         Background correction based on Novembre (MBE, 2002), by default
         False
@@ -375,14 +384,16 @@ class EffectiveNumberOfCodons(ScalarScore):
     codonbias.scores.RelativeSynonymousCodonUsage
     codonbias.scores.RelativeCodonBiasScore
     """
-    def __init__(self, bg_correction=False, robust=True,
+    def __init__(self, k_mer=1, bg_correction=False, robust=True,
                  pseudocount=1, mean='weighted', genetic_code=1):
+        self.k_mer = k_mer
         self.bg_correction = bg_correction
         self.robust = robust
         self.pseudocount = pseudocount
         self.mean = mean
-        self.counter = CodonCounter(genetic_code=genetic_code,
-                                    ignore_stop=True)  # score is not defined for STOP codons
+        self.counter = CodonCounter(
+            k_mer=k_mer, concat_index=True,
+            genetic_code=genetic_code, ignore_stop=True)  # score is not defined for STOP codons
 
         self.template = self.counter.count('').get_aa_table().to_frame()
         self.aa_deg = self.template.groupby('aa').size()
@@ -435,7 +446,7 @@ class EffectiveNumberOfCodons(ScalarScore):
             F.loc[3, 'F'] = 0.5*(F.loc[2, 'F'] + F.loc[4, 'F'])
 
         ENC = (F['deg_count'] / F['F']).sum()
-        return min([len(P), ENC])
+        return min([len(P), ENC]) ** (1/self.k_mer)
 
     def _calc_BNC(self, seq):
         """ Compute the background NUCLEOTIDE composition of the sequence. """
@@ -445,12 +456,10 @@ class EffectiveNumberOfCodons(ScalarScore):
 
     def _calc_BCC(self, BNC):
         """ Compute the background CODON composition of the sequence. """
-        BCC = pd.DataFrame(
-            [(c1+c2+c3, BNC[c1] * BNC[c2] * BNC[c3])
-             for c1, c2, c3 in product('ACGT', 'ACGT', 'ACGT')],
-            columns=['codon', 'bcc'])
-        BCC = BCC.set_index('codon')['bcc']
-        BCC = self.template.join(BCC)['bcc']
+        BCC = self.template.copy()
+        BCC['bcc'] = [np.product([BNC[c] for c in cod])
+                      for cod in BCC.index.get_level_values('codon')]
+        BCC = BCC['bcc']
         BCC /= BCC.groupby('aa').sum()
 
         return BCC 
