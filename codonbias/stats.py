@@ -241,7 +241,7 @@ class CodonCounter(object):
         return stats
 
 
-class NucleotideCounter(object):
+class BaseCounter(object):
     """
     Nucleotide statistics for a single, or multiple DNA sequences.
     When the `k_mer` argument is provided, the counter will return
@@ -269,13 +269,13 @@ class NucleotideCounter(object):
     --------
     Compute the GC3 content (GC in the third position of codons):
 
-    >>> nuc = NucleotideCounter(step=3, frame=3)
+    >>> nuc = BaseCounter(step=3, frame=3)
     >>> freq = nuc.count(seq).get_table(normed=True)
     >>> freq['G'] + freq['C']
 
     Compute CpG content:
 
-    >>> nuc = NucleotideCounter(k_mer=2)
+    >>> nuc = BaseCounter(k_mer=2)
     >>> freq = nuc.count(seq).get_table(normed=True)
     >>> freq['CG']
     """
@@ -289,8 +289,8 @@ class NucleotideCounter(object):
 
     def count(self, seqs):
         """
-        Update the NucleotideCounter object with the nucleotide counts of
-        the given sequence(s).
+        Update the BaseCounter object with the base counts of the given
+        sequence(s).
 
         Parameters
         ----------
@@ -299,8 +299,8 @@ class NucleotideCounter(object):
 
         Returns
         -------
-        NucleotideCounter
-            NucleotideCounter object (self) with updated counts
+        BaseCounter
+            BaseCounter object (self) with updated counts
         """
         self.counts = self._count(seqs)
         self.counts = self.counts.reindex(self._init_table()).fillna(0)
@@ -330,7 +330,7 @@ class NucleotideCounter(object):
 
     def get_table(self, normed=False, pseudocount=1):
         """
-        Return nucleotide counts as a Series (for a single summary) or
+        Return base counts as a Series (for a single summary) or
         DataFrame (for multiple summaries, when `sum_seqs` is False),
         indexed by the nucletoide k-mer. Normalized frequencies (when
         `normed`=True) are corrected by default using pseudocounts.
@@ -338,10 +338,10 @@ class NucleotideCounter(object):
         Parameters
         ----------
         normed : bool, optional
-            Determines whether nucleotide counts will be normalized to sum
+            Determines whether base counts will be normalized to sum
             to 1, by default False
         pseudocount : int, optional
-            Pseudocount correction for normalized nucleotide frequencies,
+            Pseudocount correction for normalized base frequencies,
             by default 1
 
         Returns

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from .stats import CodonCounter, NucleotideCounter
+from .stats import CodonCounter, BaseCounter
 from .utils import fetch_GCN_from_GtRNAdb, geomean, mean, reverse_complement
 
 
@@ -450,7 +450,7 @@ class EffectiveNumberOfCodons(ScalarScore):
 
     def _calc_BNC(self, seq):
         """ Compute the background NUCLEOTIDE composition of the sequence. """
-        BNC = NucleotideCounter(seq).get_table(normed=True)
+        BNC = BaseCounter(seq).get_table(normed=True)
 
         return BNC
 
@@ -782,7 +782,7 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
 
     def _calc_BNC(self, seq):
         """ Compute the background NUCLEOTIDE composition of the sequence. """
-        BNC = NucleotideCounter([seq[i::3] for i in range(3)],
+        BNC = BaseCounter([seq[i::3] for i in range(3)],
                                 sum_seqs=False).get_table()
 
         return BNC
