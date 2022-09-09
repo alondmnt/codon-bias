@@ -254,13 +254,35 @@ class NucleotideCounter(object):
     k_mer : int, optional
         Determines the length of the k-mer to base statistics on, by
         default 1
+    step : int, optional
+        Determines the step size to take along the sequence, by default
+        1
+    frame : int, optional
+        Determines the frame, or shift+1, from the beginning of the
+        sequence, by default 1
     sum_seqs : bool, optional
         Determines how multiple sequences will be handled. When True,
         their statistics will be summed, otherwise separate statistics
         will be kept in a table. by default True
+
+    Examples
+    --------
+    Compute the GC3 content (GC in the third position of codons):
+
+    >>> nuc = NucleotideCounter(step=3, frame=3)
+    >>> freq = nuc.count(seq).get_table(normed=True)
+    >>> freq['G'] + freq['C']
+
+    Compute CpG content:
+
+    >>> nuc = NucleotideCounter(k_mer=2)
+    >>> freq = nuc.count(seq).get_table(normed=True)
+    >>> freq['CG']
     """
-    def __init__(self, seqs=None, k_mer=1, sum_seqs=True):
+    def __init__(self, seqs=None, k_mer=1, step=1, frame=1, sum_seqs=True):
         self.k_mer = k_mer
+        self.step = step
+        self.frame = frame
         self.sum_seqs = sum_seqs
         if seqs is not None:
             self.count(seqs)
@@ -303,7 +325,8 @@ class NucleotideCounter(object):
 
         last_pos = len(seq) - self.k_mer + 1
         return pd.Series(Counter(
-            [seq[i:i+self.k_mer] for i in range(last_pos)]))
+            [seq[i:i+self.k_mer]
+             for i in range(self.frame-1, last_pos, self.step)]))
 
     def get_table(self, normed=False, pseudocount=1):
         """
