@@ -36,7 +36,7 @@ class ScalarScore(object):
         Returns
         -------
         float or numpy.array
-            _description_
+            Score for each provided sequence.
 
         Examples
         --------
@@ -104,6 +104,47 @@ class VectorScore(object):
         return [seq[i:i+3*k_mer] for i in range(0, len(seq), 3)]
 
 
+class WeightScore(object):
+    """
+    Abstract class for models that output a weights vector per sequence.
+    Inheriting classes may implement the computation of the score for
+    a single sequence in the method `_calc_seq_weights(seq)`. Parameters
+    of the model may be initialized with the instance of the class.
+    """
+    def __init__(self):
+        pass
+
+    def get_weights(self, seq, slice=None, **kwargs):
+        """
+        Compute the codon / amino acid weights for a single, or multiple
+        sequences. When `slice` is provided, all sequences will be sliced
+        before computing the score.
+
+        Parameters
+        ----------
+        seq : str or an iterable of str
+            DNA sequence, or an iterable of ones.
+        slice : slice, optional
+            Python slice object, by default None
+
+        Returns
+        -------
+        numpy.array
+            N by C array with a weights vector for each of the N provided
+            sequences.
+        """
+        if not isinstance(seq, str):
+            return np.array([self.get_weights(s, slice=slice, **kwargs) for s in seq])
+
+        if slice is not None:
+            return self._calc_seq_weights(seq[slice], **kwargs)
+        else:
+            return self._calc_seq_weights(seq, **kwargs)
+
+    def _calc_seq_weights(self, seq):
+        raise Exception('not implemented')
+
+
 class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
     """
     Frequency of Optimal Codons (FOP, Ikemura, J Mol Biol, 1981).
@@ -155,7 +196,7 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         return self.weights.reindex(self._get_codon_vector(seq)).values
 
 
-class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
+class RelativeSynonymousCodonUsage(ScalarScore, VectorScore, WeightScore):
     """
     Relative Synonymous Codon Usage (RSCU, Sharp & Li, NAR, 1986).
 
@@ -197,6 +238,7 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
     See Also
     --------
     codonbias.scores.RelativeCodonBiasScore
+
     codonbias.scores.EffectiveNumberOfCodons
     """
     def __init__(self, ref_seq=None, directional=False, mean='geometric',
@@ -217,7 +259,7 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
             normed=True, pseudocount=pseudocount)
 
     def _calc_score(self, seq):
-        D = self._calc_weights(seq).droplevel('aa')
+        D = self._calc_seq_weights(seq).droplevel('aa')
         counts = self.counter.counts  # counts have already been prepared in _calc_weights
 
         if self.mean == 'geometric':
@@ -228,27 +270,10 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore):
             raise Exception(f'unknown mean: {self.mean}')
 
     def _calc_vector(self, seq):
-        weights = self._calc_weights(seq).droplevel('aa')
+        weights = self._calc_seq_weights(seq).droplevel('aa')
         return weights.reindex(self._get_codon_vector(seq)).values
 
-    def get_weights(self, seq):
-        """
-        Compute a vector of 61 RSCU codon weights (ratios) for each
-        sequence in `seq`.
-
-        Parameters
-        ----------
-        seq : str, or iterable of str
-            DNA sequence, or an iterable of ones.
-
-        Returns
-        -------
-        pandas.Series or pandas.DataFrame
-            RSCU weights for each codon, for each sequence.
-        """
-        return self._calc_weights(seq)
-
-    def _calc_weights(self, seq):
+    def _calc_seq_weights(self, seq):
         P = self.counter.count(seq)\
             .get_aa_table(normed=True, pseudocount=self.pseudocount)
         # codon weights
@@ -326,7 +351,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         self.log_weights = np.log(self.weights)
 
 
-class EffectiveNumberOfCodons(ScalarScore):
+class EffectiveNumberOfCodons(ScalarScore, WeightScore):
     """
     Effective Number of Codons (ENC, Wright, Gene, 1990).
 
@@ -382,6 +407,7 @@ class EffectiveNumberOfCodons(ScalarScore):
     See Also
     --------
     codonbias.scores.RelativeSynonymousCodonUsage
+
     codonbias.scores.RelativeCodonBiasScore
     """
     def __init__(self, k_mer=1, bg_correction=False, robust=True,
@@ -400,28 +426,11 @@ class EffectiveNumberOfCodons(ScalarScore):
 
         self.BCC_unif = self._calc_BCC(self._calc_BNC(''))
 
+    def _calc_seq_weights(self, seq, background=None):
+        return 1 / self._calc_F(seq, background=background)[0]['F']
+
     def _calc_score(self, seq, background=None):
-        counts = self.counter.count(seq).get_aa_table()
-        counts += self.pseudocount  # Sun, Yang & Xia 2013
-
-        N = counts.groupby('aa').sum()
-        P = counts / N
-
-        if background is None:
-            background = seq
-        if self.bg_correction:
-            BCC = self._calc_BCC(self._calc_BNC(background))
-        else:
-            BCC = self.BCC_unif
-
-        if not self.robust:
-            chi2 = N * ((P - BCC)**2 / BCC).groupby('aa').sum()  # Novembre 2002
-            F = ((chi2 + N - self.aa_deg) / (N - 1) / self.aa_deg).to_frame('F')
-            # converges to Wright 1990 for BCC_unif
-        else:
-            chi2 = ((P - BCC)**2 / BCC).groupby('aa').sum()  # modified Novembre 2002
-            F = ((chi2 + 1) / self.aa_deg).to_frame('F')
-            # converges to Sun, Yang & Xia 2013 for BCC_unif, i.e., sum(p**2)
+        F, P, N = self._calc_F(seq, background=background)
 
         F['deg'] = self.aa_deg
         F['N'] = N
@@ -447,6 +456,31 @@ class EffectiveNumberOfCodons(ScalarScore):
 
         ENC = (F['deg_count'] / F['F']).sum()
         return min([len(P), ENC]) ** (1/self.k_mer)
+
+    def _calc_F(self, seq, background=None):
+        counts = self.counter.count(seq).get_aa_table()
+        counts += self.pseudocount  # Sun, Yang & Xia 2013
+
+        N = counts.groupby('aa').sum()
+        P = counts / N
+
+        if background is None:
+            background = seq
+        if self.bg_correction:
+            BCC = self._calc_BCC(self._calc_BNC(background))
+        else:
+            BCC = self.BCC_unif
+
+        if not self.robust:
+            chi2 = N * ((P - BCC)**2 / BCC).groupby('aa').sum()  # Novembre 2002
+            F = ((chi2 + N - self.aa_deg) / (N - 1) / self.aa_deg).to_frame('F')
+            # converges to Wright 1990 for BCC_unif
+        else:
+            chi2 = ((P - BCC)**2 / BCC).groupby('aa').sum()  # modified Novembre 2002
+            F = ((chi2 + 1) / self.aa_deg).to_frame('F')
+            # converges to Sun, Yang & Xia 2013 for BCC_unif, i.e., sum(p**2)
+
+        return F, P, N
 
     def _calc_BNC(self, seq):
         """ Compute the background NUCLEOTIDE composition of the sequence. """
@@ -584,7 +618,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         return self.weights.reindex(self._get_codon_vector(seq)).values
 
 
-class CodonPairBias(ScalarScore, VectorScore):
+class CodonPairBias(ScalarScore, VectorScore, WeightScore):
     """
     Codon Pair Bias (CPB/CPS, Coleman et al., Science, 2008).
 
@@ -613,6 +647,14 @@ class CodonPairBias(ScalarScore, VectorScore):
     pseudocount : int, optional
         Pseudocount correction for normalized codon frequencies. this is
         effective when `ref_seq` contains few short sequences. by default 1
+
+    See Also
+    --------
+    codonbias.scores.EffectiveNumberOfCodons
+
+    codonbias.scores.CodonAdaptationIndex
+
+    codonbias.pairwise.CodonUsageFrequency
     """
     def __init__(self, ref_seq, k_mer=2, genetic_code=1,
                  ignore_stop=True, pseudocount=1):
@@ -621,7 +663,7 @@ class CodonPairBias(ScalarScore, VectorScore):
         self.k_mer = k_mer
         self.pseudocount = pseudocount
 
-        self._calc_weights(ref_seq)
+        self.weights = self._calc_model_weights(ref_seq)
 
     def _calc_score(self, seq):
         counts = self.counter.count(seq).counts
@@ -632,7 +674,10 @@ class CodonPairBias(ScalarScore, VectorScore):
         return self.weights.reindex(
             self._get_codon_vector(seq, k_mer=self.k_mer)).values
 
-    def _calc_weights(self, seq):
+    def _calc_seq_weights(self, seq):
+        return self._calc_model_weights(seq)
+
+    def _calc_model_weights(self, seq):
         """
         Calculates the Codon Pair Score (CPS) for each pair (or k-mer).
         That is, the log-ratios of observed over expected frequencies.
@@ -650,11 +695,12 @@ class CodonPairBias(ScalarScore, VectorScore):
         weights = self._calc_freq(weights, 'codon')
 
         weights = self._calc_enrichment(weights)\
-            .droplevel(aa_levels).reorder_levels(cod_levels)
-
-        self.weights = weights['log_ratio']
-        self.weights.index = self.weights.index.to_series()\
+            .droplevel(aa_levels).reorder_levels(cod_levels)\
+            ['log_ratio']
+        weights.index = weights.index.to_series()\
             .str.join('')
+
+        return weights
 
     def _calc_freq(self, counts, word='aa'):
         levels = [n for n in counts.index.names if word in n]
@@ -694,7 +740,7 @@ class CodonPairBias(ScalarScore, VectorScore):
         return freqs
 
 
-class RelativeCodonBiasScore(ScalarScore, VectorScore):
+class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
     """
     Relative Codon Bias Score (RCBS, Roymondal, Das & Sahoo, DNA Research, 2009).
 
@@ -740,6 +786,7 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
     See Also
     --------
     codonbias.scores.RelativeSynonymousCodonUsage
+
     codonbias.scores.EffectiveNumberOfCodons
     """
     def __init__(self, directional=False, mean='geometric',
@@ -751,8 +798,8 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
                                     ignore_stop=ignore_stop)
 
     def _calc_score(self, seq):
-        D = self._calc_weights(seq)
-        counts = self.counter.counts  # counts have already been prepared in _calc_weights
+        D = self._calc_seq_weights(seq)
+        counts = self.counter.counts  # counts have already been prepared in _calc_seq_weights
 
         if self.mean == 'geometric':
             return geomean(np.log(D), counts) - 1
@@ -762,11 +809,11 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore):
             raise Exception(f'unknown mean: {self.mean}')
 
     def _calc_vector(self, seq):
-        D = self._calc_weights(seq)
+        D = self._calc_seq_weights(seq)
 
         return D.reindex(self._get_codon_vector(seq)).values
 
-    def _calc_weights(self, seq):
+    def _calc_seq_weights(self, seq):
         counts = self.counter.count(seq)
         # background probabilities
         BCC = self._calc_BCC(self._calc_BNC(seq))
