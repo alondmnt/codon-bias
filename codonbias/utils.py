@@ -141,3 +141,68 @@ def process_GtRNAdb_table(table):
     df['GCN'] = df['pair'].str[1].str.split('/').apply(lambda x: sum(map(int, x)))
 
     return df.drop(columns='pair')
+
+
+class ReferenceSelector(object):
+    """
+    A helper class for selecting reference sequences, based on models from
+    the `scores` submodule.
+
+    Parameters
+    ----------
+    score_object : codonbias.scores.ScalarScore
+        Codon model with a `get_score` method.
+    seqs : iterable of str
+        Iterable of DNA sequences.
+    higher_is_better : bool, optional
+        Defines the direction of the codon score, by default True
+    """
+    def __init__(self, score_object, seqs, higher_is_better=True):
+        self.model = score_object
+        self.seqs = seqs
+        self.higher_is_better = higher_is_better
+
+        self.scores = self.model.get_score(seqs)
+        if self.higher_is_better:
+            self.scores = -self.scores
+
+        self.indices = np.argsort(self.scores, kind='stable')
+        self.indices = self.indices[~np.isnan(self.scores[self.indices])]
+
+    def get_top_seqs(self, top=0.2):
+        """
+        Returns the top sequences based on the given model.
+
+        Parameters
+        ----------
+        top : float, optional
+            Can be a positive integer or a float in (0, 1), by default 0.2
+
+        Returns
+        -------
+        list of str
+            List of DNA sequences, sorted by the score.
+        """
+        return [self.seqs[i] for i in self.get_top_indices(top=top)]
+
+    def get_top_indices(self, top=0.2):
+        """
+        Returns the top sequence indices based on the given model.
+
+        Parameters
+        ----------
+        top : float, optional
+            Can be a positive integer or a float in (0, 1), by default 0.2
+
+        Returns
+        -------
+        np.array
+            Vector of sequence indices, sorted by the score.
+        """
+        if top <= 0:
+            raise Exception('`top` argument must be a positive integer or a float in (0, 1).')
+        elif top < 1:
+            itop = int(top * len(self.scores))
+        else:
+            itop = top
+        return self.indices[:itop]
