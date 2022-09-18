@@ -1,4 +1,3 @@
-from collections import Counter
 from itertools import product
 import os
 
@@ -267,7 +266,7 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore, WeightScore):
         elif self.mean == 'arithmetic':
             return mean(D, counts)
         else:
-            raise Exception(f'unknown mean: {self.mean}')
+            raise ValueError(f'unknown mean: {self.mean}')
 
     def _calc_vector(self, seq):
         weights = self._calc_seq_weights(seq).droplevel('aa')
@@ -446,7 +445,7 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
             F = F.groupby('deg')['F'].sum() / F.groupby('deg')['N'].sum()
             F = F.to_frame('F').join(deg_count, how='right')
         else:
-            raise Exception(f'unknown mean="{self.mean}"')
+            raise ValueError(f'unknown mean="{self.mean}"')
 
         # missing AA cases
         miss_3 = np.isnan(F.loc[3, 'F'])
@@ -563,7 +562,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         if url is not None or (genome_id is not None and domain is not None):
             tGCN = fetch_GCN_from_GtRNAdb(url=url, domain=domain, genome=genome_id)
         if tGCN is None:
-            raise Exception('must provide either: tGCN dataframe, GtRNAdb url, or GtRNAdb genome_id+domain')
+            raise TypeError('must provide either: tGCN dataframe, GtRNAdb url, or GtRNAdb genome_id+domain')
         tGCN['anti_codon'] = tGCN['anti_codon'].str.upper().str.replace('U', 'T')
         self.tGCN = tGCN
 
@@ -806,7 +805,7 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
         elif self.mean == 'arithmetic':
             return mean(D, counts)
         else:
-            raise Exception(f'unknown mean: {self.mean}')
+            raise ValueError(f'unknown mean: {self.mean}')
 
     def _calc_vector(self, seq):
         D = self._calc_seq_weights(seq)
@@ -897,7 +896,7 @@ class NormalizedTranslationalEfficiency(ScalarScore, VectorScore):
                  domain=None, prokaryote=False, s_values='dosReis',
                  genetic_code=1):
         if len(ref_seq) != len(mRNA_counts):
-            raise Exception(
+            raise ValueError(
                 f'lengths of ref_seq, mRNA_counts do not match: {len(ref_seq)} != {len(mRNA_counts)}')
 
         # supply: classical translational efficiency

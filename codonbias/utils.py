@@ -200,7 +200,7 @@ class ReferenceSelector(object):
             Vector of sequence indices, sorted by the score.
         """
         if top <= 0:
-            raise Exception('`top` argument must be a positive integer or a float in (0, 1).')
+            raise ValueError('`top` argument must be a positive integer or a float in (0, 1).')
         elif top < 1:
             itop = int(top * len(self.scores))
         else:
