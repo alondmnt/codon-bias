@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pandas as pd
 
@@ -5,6 +7,29 @@ complement = {'A': 'T',
               'C': 'G',
               'G': 'C',
               'T': 'A'}
+gc = pd.read_csv(f'{os.path.dirname(__file__)}/genetic_code_ncbi.csv',
+                 index_col=0).sort_index()
+# https://en.wikipedia.org/wiki/List_of_genetic_codes
+
+
+def translate(seq, genetic_code=1):
+    """
+    Translate a nucleotide sequence and return its amino acids.
+
+    Parameters
+    ----------
+    seq : str
+        DNA sequence.
+    genetic_code : int, optional
+        NCBI genetic code ID, by default 1
+    """
+    genetic_code = str(genetic_code)
+    seq_nt = seq.upper().replace('U', 'T')
+    code = gc[genetic_code]
+    n = len(seq) - (len(seq) % 3)
+    seq_aa = ''.join(code.loc[[seq_nt[i:i+3] for i in range(0, n, 3)]])
+
+    return seq_aa
 
 
 def reverse_complement(seq):
