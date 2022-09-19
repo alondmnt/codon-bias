@@ -26,6 +26,7 @@ The package contains 4 submodules:
 - codonbias.scores: Models / scores that operate on individual sequences
   independently.
 - codonbias.pairwise: Models / scores that operate on pairs of sequences.
+- codonbias.optimizers: Algorithms for score-based optimization of a sequence.
 - codonbias.utils: Helper functions for the other submodules.
 
 """
@@ -37,3 +38,4 @@ import codonbias.utils
 import codonbias.stats
 import codonbias.scores
 import codonbias.pairwise
+import codonbias.optimizers
