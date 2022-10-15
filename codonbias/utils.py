@@ -12,7 +12,7 @@ gc = pd.read_csv(f'{os.path.dirname(__file__)}/genetic_code_ncbi.csv',
 # https://en.wikipedia.org/wiki/List_of_genetic_codes
 
 
-def translate(seq, genetic_code=1):
+def translate(seq, return_str=False, genetic_code=1):
     """
     Translate a nucleotide sequence and return its amino acids.
 
@@ -27,7 +27,10 @@ def translate(seq, genetic_code=1):
     seq_nt = seq.upper().replace('U', 'T')
     code = gc[genetic_code]
     n = len(seq) - (len(seq) % 3)
-    seq_aa = ''.join(code.loc[[seq_nt[i:i+3] for i in range(0, n, 3)]])
+    seq_aa = code.loc[[seq_nt[i:i+3] for i in range(0, n, 3)]].to_frame('aa')
+
+    if return_str:
+        seq_aa = ''.join(seq_aa['aa'])
 
     return seq_aa
 
