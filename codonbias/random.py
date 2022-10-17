@@ -1,6 +1,3 @@
-from collections import defaultdict
-from multiprocessing.pool import Pool
-from sqlite3 import SQLITE_CREATE_TEMP_VIEW
 import psutil
 import warnings
 
@@ -9,7 +6,7 @@ import pandas as pd
 from scipy import stats
 from pandarallel import pandarallel
 
-from .utils import translate
+from .utils import translate, greater_equal, less_equal, rankdata
 from .scores import VectorScore
 
 
@@ -287,11 +284,11 @@ class Permuter(object):
         if return_pval:
             out_col = 'pval'
             if alternative == 'greater':
-                func = lambda x: 1 - (stats.rankdata(x) + 1) / (len(x) + 1)
+                func = lambda x: 1 - (rankdata(x) + 1) / (len(x) + 1)
             elif alternative == 'less':
-                func = lambda x: (stats.rankdata(x) + 1) / (len(x) + 1)
+                func = lambda x: (rankdata(x) + 1) / (len(x) + 1)
             elif alternative == 'two-sided':
-                func = lambda x: 0.5 - np.abs((stats.rankdata(x) + 1) / (len(x) + 1) - 0.5)
+                func = lambda x: 0.5 - np.abs((rankdata(x) + 1) / (len(x) + 1) - 0.5)
         else:
             out_col = 'zscore'
             func = lambda x: (x.values - np.nanmean(x, axis=0)) / np.nanstd(x, axis=0)
@@ -299,7 +296,7 @@ class Permuter(object):
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
             df[out_col] = df.groupby(by, sort=False)[col].apply(
-                lambda x: pd.DataFrame(func(x.to_frame()),
+                lambda x: pd.DataFrame(func(x.to_frame().values),
                                        index=x.index, columns=[col]))
 
         return df.sort_values(['id', 'pos'])\
@@ -307,13 +304,12 @@ class Permuter(object):
 
     def _calc_pval(self, df, null, alternative, iterate=False):
         if alternative == 'greater':
-            func = np.greater_equal
+            func = greater_equal
         elif alternative == 'less':
-            func = np.less_equal
+            func = less_equal
 
         if iterate:
-            # TODO: handle nans
-            df['pval'] = [np.nansum(func(np.vstack(row), real), axis=0)
+            df['pval'] = [np.sum(func(np.vstack(row), real), axis=0)
                           for real, (_, row) in zip(df['weights'], null.iterrows())]
             df['pval'] = (df['pval'] + 1) / (self.n_samples + 1)
             return df['pval']
