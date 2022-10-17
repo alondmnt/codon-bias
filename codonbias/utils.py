@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 complement = {'A': 'T',
               'C': 'G',
@@ -169,6 +170,33 @@ def process_GtRNAdb_table(table):
     df['GCN'] = df['pair'].str[1].str.split('/').apply(lambda x: sum(map(int, x)))
 
     return df.drop(columns='pair')
+
+
+def greater_equal(x1, x2):
+    """
+    Modifies the corresponding numpy operator to preserve NaNs.
+    """
+    res = np.greater_equal(x1, x2).astype(float)
+    res[np.isnan(x1) | np.isnan(x2)] = np.nan
+    return res
+
+
+def less_equal(x1, x2):
+    """
+    Modifies the corresponding numpy operator to preserve NaNs.
+    """
+    res = np.less_equal(x1, x2).astype(float)
+    res[np.isnan(x1) | np.isnan(x2)] = np.nan
+    return res
+
+
+def rankdata(x):
+    """
+    Modifies the corresponding scipy function to preserve NaNs.
+    """
+    res = stats.rankdata(x)
+    res[np.isnan(x.ravel())] = np.nan
+    return res
 
 
 class ReferenceSelector(object):
