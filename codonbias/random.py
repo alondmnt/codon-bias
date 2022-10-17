@@ -273,8 +273,7 @@ class Permuter(object):
                      for _, row in null.iterrows()]
         df['zscore'] = (df['weights'] - df['mean']) / df['std']
 
-        return df.sort_values(['id', 'pos'])\
-            .groupby('id')['zscore'].apply(lambda x: x.values)
+        return df['zscore']
 
     def _skip_permutation(self, df, col, by, return_pval, alternative='greater'):
         """
@@ -291,7 +290,7 @@ class Permuter(object):
                 func = lambda x: 0.5 - np.abs((rankdata(x) + 1) / (len(x) + 1) - 0.5)
         else:
             out_col = 'zscore'
-            func = lambda x: (x.values - np.nanmean(x, axis=0)) / np.nanstd(x, axis=0)
+            func = lambda x: (x - np.nanmean(x, axis=0)) / np.nanstd(x, axis=0)
 
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
