@@ -9,10 +9,26 @@ codonbias package
 Submodules
 ----------
 
+codonbias.optimizers module
+---------------------------
+
+.. automodule:: codonbias.optimizers
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 codonbias.pairwise module
 -------------------------
 
 .. automodule:: codonbias.pairwise
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+codonbias.random module
+-----------------------
+
+.. automodule:: codonbias.random
    :members:
    :undoc-members:
    :show-inheritance:

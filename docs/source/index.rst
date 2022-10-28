@@ -6,9 +6,9 @@
 Codon-Bias documentation
 ========================
 
-This Python package provides analysis tools for genomic sequences,
-focusing on protein coding regions, translation efficiency and synonymous
-mutations.
+This Python package provides codon usage bias (CUB) analysis tools for
+genomic sequences, focusing on protein coding regions, translation
+efficiency and synonymous mutations.
 
 Contents
 --------

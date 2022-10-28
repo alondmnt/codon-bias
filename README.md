@@ -1,6 +1,6 @@
 # codon-bias
 
-This package provides analysis tools for genomic sequences, focusing on protein coding regions, translation efficiency and synonymous mutations. These include implementations of popular models from the past four decades of codon usage study, such as:
+This package provides codon usage bias (CUB) analysis tools for genomic sequences, focusing on protein coding regions, translation efficiency and synonymous mutations. These include implementations of popular models from the past four decades of codon usage study, such as:
 
 - Nucleotide and codon k-mer statistics (GC, GC3, CpG, etc.)
 - Frequency of Optimal Codons (FOP)
@@ -17,6 +17,8 @@ This package provides analysis tools for genomic sequences, focusing on protein 
 - Normalized Translational Efficiency (nTE)
 - Directional Codon Bias Score (DCBS)
 - Codon Usage Frequency Similarity (CUFS)
+
+This package also includes tools for sequence optimization based on these codon usage models, and generators of random sequence permutations that can be used to compute empirical p-values and z-scores.
 
 ## installation
 
