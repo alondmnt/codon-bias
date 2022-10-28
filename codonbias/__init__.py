@@ -20,18 +20,25 @@ of codon usage study, such as:
 - Directional Codon Bias Score (DCBS)
 - Codon Usage Frequency Similarity (CUFS)
 
-The package contains 4 submodules:
+This package also includes tools for sequence optimization based on these
+codon usage models, and generators of random sequence permutations that
+can be used to compute empirical p-values and z-scores.
+
+The package contains 6 submodules:
 
 - codonbias.stats: Classes for basepair / codon statistics.
 - codonbias.scores: Models / scores that operate on individual sequences
   independently.
 - codonbias.pairwise: Models / scores that operate on pairs of sequences.
-- codonbias.optimizers: Algorithms for score-based optimization of a sequence.
+- codonbias.optimizers: Algorithms for score-based optimization of a
+  sequence.
+- codonbias.random: Random sequence permutations for empirical z-scores
+  and p-values.
 - codonbias.utils: Helper functions for the other submodules.
 
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = 'Alon Diament'
 
 import codonbias.utils
@@ -39,3 +46,4 @@ import codonbias.stats
 import codonbias.scores
 import codonbias.pairwise
 import codonbias.optimizers
+import codonbias.random
