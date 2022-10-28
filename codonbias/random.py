@@ -3,7 +3,6 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 from pandarallel import pandarallel
 
 from .utils import translate, greater_equal, less_equal, rankdata
@@ -32,10 +31,10 @@ class Permuter(object):
 
     Parameters
     ----------
-    property_func : _type_, optional
+    property_func : function, optional
         Property generating function that accepts a sequence as input and
         returns a pandas.DataFrame with propery columns, by default
-        utils.translate
+        codonbias.utils.translate
     n_samples : int, optional
         The numper of permutations to generate for each sequence. When
         zero, the permuter attempts to estimate the z-scores and
@@ -74,18 +73,26 @@ class Permuter(object):
         ----------
         seqs : iterable of str
             DNA sequence.
+        slice : slice object, optional
+            Optional slicing applied to all sequences prior to
+            perpmuation, by deafult None
 
         Returns
         -------
         pandas.DataFrame
             Permuted sequences DataFrame with `n_samples` columns.
         """
-        df, prop_cols = self._preprocess_df(seqs, slice=slice)
+        if slice is not None:
+            seqs = [s[slice] for s in seqs]
+
+        df, prop_cols = self._preprocess_df(seqs)
 
         return self._postprocess_seq(self._permute_df(
             df, prop_cols, 'seq', self.n_samples))
 
-    def get_zscore(self, vector, seqs, slice=None):
+    def get_zscore(self, vector, seqs,
+                   slice=None, mapfunc=None, aggfunc=None,
+                   model_kws={}):
         """
         Compute the z-score for each position in the vector using random
         permutations of the sequences. The parameter `vector` can be either
@@ -100,6 +107,18 @@ class Permuter(object):
             VectorScore model.
         seqs : iterable of str
             DNA sequence.
+        slice : slice object, optional
+            Optional slicing applied to all sequences and vectors prior to
+            permutation, by deafult None
+        mapfunc : function, optional
+            Optional map function to be applied to every vector, by
+            default None
+        aggfunc : function, optional
+            Optional agg function to aggregate all vectors, by default
+            None
+        model_kws : dict, optional
+            Optional keyword arguments to the VectorScore model's
+            get_vector function, by default {}
 
         Returns
         -------
@@ -107,12 +126,23 @@ class Permuter(object):
             Z-scores series with an entry for each input sequence that
             contains its z-scores array.
         """
-        if isinstance(vector, VectorScore):
-            return self._permute_and_compute(vector, seqs, return_pval=False, slice=slice)
-        else:
-            return self._permute_vector(vector, seqs, return_pval=False, slice=slice)
+        if slice is not None:
+            seqs = [s[slice] for s in seqs]
 
-    def get_pval(self, vector, seqs, alternative='greater', slice=None):
+        if isinstance(vector, VectorScore):
+            return self._permute_and_compute(vector, seqs, return_pval=False,
+                                             mapfunc=mapfunc, aggfunc=aggfunc,
+                                             model_kws=model_kws)
+
+        if mapfunc is not None or aggfunc is not None:
+            raise TypeError(f'`mapfunc/aggfunc` are only supported when `vector` is a VectorScore model')
+        if slice is not None:
+            vector = [v[slice] for v in vector]
+        return self._permute_vector(vector, seqs, return_pval=False)
+
+    def get_pval(self, vector, seqs, alternative='greater',
+                 slice=None, mapfunc=None, aggfunc=None,
+                 model_kws={}):
         """
         Compute the p-value for each position in the vector using random
         permutations of the sequences. The parameter `vector` can be either
@@ -127,6 +157,18 @@ class Permuter(object):
             VectorScore model.
         seqs : iterable of str
             DNA sequence.
+        slice : slice object, optional
+            Optional slicing applied to all sequences and vectors, by
+            deafult None
+        mapfunc : function, optional
+            Optional map function to be applied to every vector, by
+            default None
+        aggfunc : function, optional
+            Optional agg function to aggregate all vectors, by default
+            None
+        model_kws : dict, optional
+            Optional keyword arguments to the VectorScore model's
+            get_vector function, by default {}
 
         Returns
         -------
@@ -134,22 +176,28 @@ class Permuter(object):
             Z-scores series with an entry for each input sequence that
             contains its p-values array.
         """
+        if slice is not None:
+            seqs = [s[slice] for s in seqs]
+
         if isinstance(vector, VectorScore):
             return self._permute_and_compute(vector, seqs, return_pval=True,
-                                             alternative=alternative, slice=slice)
-        else:
-            return self._permute_vector(vector, seqs, return_pval=True,
-                                        alternative=alternative, slice=slice)
+                                             alternative=alternative,
+                                             mapfunc=mapfunc, aggfunc=aggfunc,
+                                             model_kws=model_kws)
 
-    def _preprocess_df(self, seqs, slice=None, **kwargs):
+        if mapfunc is not None or aggfunc is not None:
+            raise TypeError(f'`mapfunc/aggfunc` are only supported when `vector` is a VectorScore model')
+        if slice is not None:
+            vector = [v[slice] for v in vector]
+        return self._permute_vector(vector, seqs, return_pval=True,
+                                    alternative=alternative)
+
+    def _preprocess_df(self, seqs, **kwargs):
         """
         Compute the property for all sequences and return them in
         as a single DataFrame, along with the list of columns containing
         the property to be conserved.
         """
-        if slice is not None:
-            seqs = [s[slice] for s in seqs]
-
         df = pd.concat([self._preprocess_seq(s, **{k: v[i] for k, v in kwargs.items()})
                         .assign(id=i)
                         for i, s in enumerate(seqs)], axis=0).reset_index(drop=True)
@@ -199,7 +247,7 @@ class Permuter(object):
         return df
 
     def _permute_vector(self, vector, seqs,
-                        return_pval=False, alternative='greater', slice=None):
+                        return_pval=False, alternative='greater'):
         """
         This function tends to be efficient, however it assumes that the
         computation of vector values is order invariant. Otherwise, the
@@ -219,7 +267,7 @@ class Permuter(object):
         if alternative not in alt_values:
             raise ValueError(f"alternative must be in {alt_values}, got '{alternative}'")
 
-        df, prop_cols = self._preprocess_df(seqs, slice=slice, weights=vector)
+        df, prop_cols = self._preprocess_df(seqs, weights=vector)
 
         if self.n_samples == 0:
             return self._skip_permutation(
@@ -237,8 +285,10 @@ class Permuter(object):
         return df.sort_values(['id', 'pos'])\
             .groupby('id')['zscore'].apply(lambda x: x.values)
 
-    def _permute_and_compute(self, model, seqs, return_pval=False,
-                             alternative='greater', slice=None):
+    def _permute_and_compute(self, model, seqs,
+                             return_pval=False, alternative='greater',
+                             mapfunc=None, aggfunc=None,
+                             model_kws={}):
         """
         This function does not make any assumptions on the computation of
         the weight vector for each sequence, and recomputes it using the
@@ -256,21 +306,32 @@ class Permuter(object):
             raise ValueError(f"alternative must be in {alt_values}, got '{alternative}'")
 
         if self.n_samples == 0:
-            raise ValueError("""`n_samples` cannot be 0 when providing a VectorModel.
+            raise ValueError("""`n_samples` cannot be 0 when providing a VectorScore model.
                              Increase `n_samples` or provide a weights vector for the
                              sequence instead.""")
 
-        null = self.get_permuted_seq(seqs, slice=slice)\
-            .parallel_applymap(model.get_vector)
-        df = pd.DataFrame({'weights': model.get_vector(seqs)}, index=null.index)
+        null = self.get_permuted_seq(seqs)\
+            .parallel_applymap(lambda x: model.get_vector(x, **model_kws))
+        df = pd.DataFrame({'weights': list(model.get_vector(seqs, **model_kws))},
+                          index=null.index)
+        if mapfunc is not None:
+            null = null.parallel_applymap(mapfunc)
+            df['weights'] = df['weights'].apply(mapfunc)
+        if aggfunc is not None:
+            null = null.agg(aggfunc)
+            df = df.agg(aggfunc)
 
         if return_pval:
             return self._calc_pval(df, null, alternative, iterate=True)
 
-        df['mean'] = [np.nanmean(np.vstack(row), axis=0)
-                      for _, row in null.iterrows()]
-        df['std'] = [np.nanstd(np.vstack(row), axis=0)
-                     for _, row in null.iterrows()]
+        if type(null) is pd.DataFrame:
+            df['mean'] = [np.nanmean(np.vstack(row), axis=0)
+                          for _, row in null.iterrows()]
+            df['std'] = [np.nanstd(np.vstack(row), axis=0)
+                         for _, row in null.iterrows()]
+        else:
+            df['mean'] = np.nanmean(np.array(list(null)), axis=0)
+            df['std'] = np.nanstd(np.array(list(null)), axis=0)
         df['zscore'] = (df['weights'] - df['mean']) / df['std']
 
         return df['zscore']
@@ -308,8 +369,11 @@ class Permuter(object):
             func = less_equal
 
         if iterate:
-            df['pval'] = [np.sum(func(np.vstack(row), real), axis=0)
-                          for real, (_, row) in zip(df['weights'], null.iterrows())]
+            if type(null) is pd.DataFrame:
+                df['pval'] = [np.sum(func(np.vstack(row), real), axis=0)
+                              for real, (_, row) in zip(df['weights'], null.iterrows())]
+            else:
+                df['pval'] = np.sum(func(np.array(list(null)), df['weights']), axis=0)
             df['pval'] = (df['pval'] + 1) / (self.n_samples + 1)
             return df['pval']
 
@@ -343,7 +407,7 @@ class IntraSeqPermuter(Permuter):
 
     Parameters
     ----------
-    property_func : _type_, optional
+    property_func : function, optional
         Property generating function that accepts a sequence as input and
         returns a pandas.DataFrame with propery columns, by default
         utils.translate
@@ -392,7 +456,7 @@ class IntraPosPermuter(Permuter):
 
     Parameters
     ----------
-    property_func : _type_, optional
+    property_func : fuction, optional
         Property generating function that accepts a sequence as input and
         returns a pandas.DataFrame with propery columns, by default
         utils.translate

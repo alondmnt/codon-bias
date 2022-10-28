@@ -89,7 +89,8 @@ class VectorScore(object):
             M.
         """
         if not isinstance(seq, str):
-            dtype = object if np.unique([len(s) for s in seq]).size > 1 else None
+            dtype = object if slice is None \
+                and np.unique([len(s) for s in seq]).size > 1 else None
             return np.array(
                 [self.get_vector(s, slice=slice, **kwargs) for s in seq],
                 dtype=dtype)
