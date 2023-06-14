@@ -15,6 +15,7 @@ Contents
 
 .. toctree::
 
+   notebooks/getting_started
    codonbias
 
 Indices and tables
