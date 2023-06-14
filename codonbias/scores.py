@@ -68,7 +68,7 @@ class VectorScore(object):
     def __init__(self):
         pass
 
-    def get_vector(self, seq, slice=None, **kwargs):
+    def get_vector(self, seq, slice=None, pad=False, **kwargs):
         """
         Compute the score vector for a single, or multiple sequences.
         When `slice` is provided, all sequences will be sliced before
@@ -79,7 +79,10 @@ class VectorScore(object):
         seq : str or an iterable of str
             DNA sequence, or an iterable of ones.
         slice : slice, optional
-            Python slice object, by default None
+            Python slice object, by default None.
+        pad : bool, optional
+            Pad the vector with NaNs if the sequence is shorter than
+            the maximum length, by default False.
 
         Returns
         -------
@@ -88,17 +91,22 @@ class VectorScore(object):
             arbitrary sequences, or a matrix NxM for N sequences of length
             M.
         """
-        if not isinstance(seq, str):
-            dtype = object if slice is None \
-                and np.unique([len(s) for s in seq]).size > 1 else None
-            return np.array(
-                [self.get_vector(s, slice=slice, **kwargs) for s in seq],
-                dtype=dtype)
+        if isinstance(seq, str):
+            if slice is not None:
+                return self._calc_vector(seq[slice], **kwargs)
+            else:
+                return self._calc_vector(seq, **kwargs)
 
-        if slice is not None:
-            return self._calc_vector(seq[slice], **kwargs)
-        else:
-            return self._calc_vector(seq, **kwargs)
+        dtype = object if slice is None \
+            and np.unique([len(s) for s in seq]).size > 1 and not pad else None
+        vecs = [self.get_vector(s, slice=slice, **kwargs) for s in seq]
+
+        if pad:
+            max_len = max([len(v) for v in vecs])
+            vecs = [np.pad(v, (0, max_len - len(v)),
+                           mode='constant', constant_values=np.nan) for v in vecs]
+
+        return np.array(vecs, dtype=dtype)
 
     def _calc_vector(self, seq):
         raise Exception('not implemented')
