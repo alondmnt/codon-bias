@@ -77,7 +77,7 @@ class CodonCounter(object):
 
         return pd.Series(Counter(
             [seq[i:i + 3*self.k_mer]
-             for i in range(0, len(seq), 3)]))
+             for i in range(0, len(seq), 3)]), dtype=int)
 
     def _format_counts(self, counts):
         counts.index.name = 'codon'
@@ -326,7 +326,7 @@ class BaseCounter(object):
         last_pos = len(seq) - self.k_mer + 1
         return pd.Series(Counter(
             [seq[i:i+self.k_mer]
-             for i in range(self.frame-1, last_pos, self.step)]))
+             for i in range(self.frame-1, last_pos, self.step)]), dtype=int)
 
     def get_table(self, normed=False, pseudocount=1):
         """

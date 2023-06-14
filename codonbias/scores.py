@@ -348,7 +348,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
             .get_aa_table(normed=True, pseudocount=self.pseudocount)
 
         aa_levels = [n for n in self.weights.index.names if 'aa' in n]
-        self.weights = self.weights.groupby(aa_levels)\
+        self.weights = self.weights.groupby(aa_levels, group_keys=False)\
             .apply(lambda x: x / x.max()).droplevel(aa_levels)
 
         self.log_weights = np.log(self.weights)
