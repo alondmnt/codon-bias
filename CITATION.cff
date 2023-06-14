@@ -4,8 +4,8 @@ authors:
 - family-names: "Diament"
   given-names: "Alon"
   orcid: "https://orcid.org/0000-0002-3939-5703"
-title: "codon-bias: Python package of codon usage bias analysis tools "
-version: v0.3.1
+title: "codon-bias (python package)"
+version: 0.3.0
 doi: 10.5281/zenodo.8039452
-date-released: 2023-06-14
+date-released: 2022-10-28
 url: "https://github.com/alondmnt/codon-bias"
