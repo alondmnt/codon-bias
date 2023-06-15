@@ -30,6 +30,10 @@ pip install codon-bias
 
 Read on [Read the Docs](https://codon-bias.readthedocs.org).
 
+## cite
+
+Diament, A. (2022). codon-bias (python package) (Version 0.3.0). https://doi.org/10.5281/zenodo.8039452
+
 ## contributing
 
 Contributions of additional models to the package are welcome! Please familiarize yourself with the existing classes, and try to conform to their style.
