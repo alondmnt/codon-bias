@@ -29,7 +29,9 @@ class PairwiseScore(object):
     Parameters
     ----------
     n_jobs : int, optional
-        Number of processes to use for matrix computation, by default None
+        Number of processes to use for matrix computation. If None is
+        provided then the number returned by os.cpu_count() is used, by
+        default None
     """
     def __init__(self, n_jobs=None):
         self.n_jobs = n_jobs
@@ -120,12 +122,14 @@ class CodonUsageFrequency(PairwiseScore):
         NCBI genetic code ID, by default 1
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by
-        default True
+        default False
     pseudocount : int, optional
         Pseudocount correction for normalized codon frequencies, by
         default 1
     n_jobs : _type_, optional
-        Number of processes to use for matrix computation, by default None
+        Number of processes to use for matrix computation. If None is
+        provided then the number returned by os.cpu_count() is used, by
+        default None
     """
     def __init__(self, synonymous=False, k_mer=1, genetic_code=1,
                  ignore_stop=False, pseudocount=1, n_jobs=None):
