@@ -167,7 +167,7 @@ def process_GtRNAdb_table(table):
     df = pd.DataFrame({'pair': df.values[df.apply(lambda col: col.str.len()).values == 2]})
     # rearrange
     df['anti_codon'] = df['pair'].str[0]
-    df['GCN'] = df['pair'].str[1].str.split('/').apply(lambda x: sum(map(int, x)))
+    df['GCN'] = df['pair'].str[1].str.split('/').apply(lambda x: sum(map(lambda y: int(y) if y.isdigit() else 0, x)))
 
     return df.drop(columns='pair')
 
