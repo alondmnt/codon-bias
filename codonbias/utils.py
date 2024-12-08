@@ -1,4 +1,5 @@
 import os
+import ssl
 
 import numpy as np
 import pandas as pd
@@ -140,6 +141,8 @@ def fetch_GCN_from_GtRNAdb(url=None, genome=None, domain=None):
     """
     if genome is not None and domain is not None:
         url = f'http://gtrnadb.ucsc.edu/genomes/{domain}/{genome}/'
+
+    ssl._create_default_https_context = ssl._create_unverified_context
     tables = pd.read_html(url)
 
     return pd.concat(
