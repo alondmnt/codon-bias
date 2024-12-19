@@ -593,7 +593,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
     def optimize_s_values(self, ref_seq, expression, optimize_wc=False, method="Powell", **kwargs):
         """
-        Optimizes s-values such that the correlation between tAI calculated on ref_seq and expression is maximal.
+        Optimizes s-values such that the Spearman correlation between tAI calculated on ref_seq and expression is maximal.
 
         Parameters
         ----------
@@ -614,6 +614,14 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         scipy.optimize.OptimizeResult
             The optimization result
         """
+        if len(ref_seq) != len(expression):
+            raise ValueError(
+                f'lengths of ref_seq, expression do not match: {len(ref_seq)} != {len(expression)}')
+        # Ensure values are finite
+        valid = np.isfinite(expression)
+        expression = [e for e, v in zip(expression, valid) if v]
+        ref_seq = [s for s, v in zip(ref_seq, valid) if v]
+        print(f'optimize_s_values: removed {(~valid).sum():,d} non-finite values')
 
         def func(weights):
             self.s_values["weight"] = weights
