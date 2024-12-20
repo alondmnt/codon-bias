@@ -14,6 +14,8 @@ of codon usage study, such as:
     - Improved estimation
     - Effective number of codon pairs (and k-mers) (ENcp)
 - tRNA Adaptation Index (tAI)
+    - Download tRNA gene copy numbers from [GtRNAdb](http://gtrnadb.ucsc.edu/)
+    - Train tAI model parameters (s-values) using expression levels
 - Codon Pair Bias (CPB/CPS)
 - Relative Codon Bias Score (RCBS)
 - Normalized Translational Efficiency (nTE)
@@ -38,7 +40,7 @@ The package contains 6 submodules:
 
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 __author__ = 'Alon Diament'
 
 import codonbias.utils
