@@ -1,4 +1,5 @@
 import os
+import ssl
 
 import numpy as np
 import pandas as pd
@@ -140,6 +141,8 @@ def fetch_GCN_from_GtRNAdb(url=None, genome=None, domain=None):
     """
     if genome is not None and domain is not None:
         url = f'http://gtrnadb.ucsc.edu/genomes/{domain}/{genome}/'
+
+    ssl._create_default_https_context = ssl._create_unverified_context
     tables = pd.read_html(url)
 
     return pd.concat(
@@ -167,7 +170,7 @@ def process_GtRNAdb_table(table):
     df = pd.DataFrame({'pair': df.values[df.apply(lambda col: col.str.len()).values == 2]})
     # rearrange
     df['anti_codon'] = df['pair'].str[0]
-    df['GCN'] = df['pair'].str[1].str.split('/').apply(lambda x: sum(map(int, x)))
+    df['GCN'] = df['pair'].str[1].str.split('/').apply(lambda x: sum(map(lambda y: int(y) if y.isdigit() else 0, x)))
 
     return df.drop(columns='pair')
 

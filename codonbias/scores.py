@@ -3,7 +3,7 @@ import os
 
 import numpy as np
 import pandas as pd
-from scipy import stats
+from scipy import stats, optimize
 
 from .stats import CodonCounter, BaseCounter
 from .utils import fetch_GCN_from_GtRNAdb, geomean, mean, reverse_complement
@@ -531,7 +531,9 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
     in order to maximize the correlation with mRNA levels measured via
     microarrays. The model was later refitted using protein abundance
     levels (Tuller et al., Genome Biology, 2011). The `s_values`
-    parameter can be used to switch between these coefficients sets.
+    parameter can be used to switch between these coefficients sets or
+    provide custom values. Additionally, s_values can be optimized such
+    that the correlation of tAI with expression (or a CUB measure) is maximized.
     When analyzing an organism that is a prokaryote, the `prokaryote`
     parameter should be set to True.
 
@@ -548,22 +550,16 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         Taxonomic domain of the organism, by default None
     prokaryote : bool, optional
         Whether the organism is a prokaryote, by default False
-    s_values : {'dosReis', 'Tuller'}, optional
+    s_values : {'dosReis', 'Tuller'} or DataFrame, optional
         Coefficients of the tRNA-codon efficiency of coupling, by default 'dosReis'
+        If {'dosReis', 'Tuller'}, default values optimized in yeast are used.
+        If DataFrame, s_values are used as provided. Required columns: `anti`, `cod`, `min_deg`, `weight`
     genetic_code : int, optional
         NCBI genetic code ID, by default 1
 
     See Also
     --------
     codonbias.scores.NormalizedTranslationalEfficiency
-
-    Notes
-    -----
-    For species-specific optimization of the tAI model, see:
-    Sabi & Tuller, DNA Research, 2014;
-    the stAIcalc online calculator: https://tau-tai.azurewebsites.net/;
-    and the gtAI package: https://github.com/AliYoussef96/gtAI.
-
     """
     def __init__(self, tGCN=None, url=None, genome_id=None, domain=None,
                  prokaryote=False, s_values='dosReis', genetic_code=1):
@@ -579,9 +575,14 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         self.tGCN = tGCN
 
         # S-values: tRNA-codon efficiency of coupling
-        self.s_values = pd.read_csv(
-            f'{os.path.dirname(__file__)}/tAI_svalues_{s_values}.csv',
-            dtype={'weight': float, 'prokaryote': bool}, comment='#')
+        if type(s_values) is pd.DataFrame:
+            self.s_values = s_values
+        elif type(s_values) is str:
+            self.s_values = pd.read_csv(
+                f'{os.path.dirname(__file__)}/tAI_svalues_{s_values}.csv',
+                dtype={'weight': float, 'prokaryote': bool}, comment='#')
+        else:
+            raise TypeError(f"s_values must be provided as string or dataframe")
         self.s_values['anti'] = self.s_values['anti'].str.upper().str.replace('U', 'T')
         self.s_values['cod'] = self.s_values['cod'].str.upper().str.replace('U', 'T')
         if not prokaryote:
@@ -589,6 +590,54 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
         self.weights = self._calc_weights()
         self.log_weights = np.log(self.weights)
+
+    def optimize_s_values(self, ref_seq, expression, optimize_wc=False, method="Powell", **kwargs):
+        """
+        Optimizes s-values such that the Spearman correlation between tAI calculated on ref_seq and expression is maximal.
+
+        Parameters
+        ----------
+        ref_seq: iterable of str
+             Reference sequences for which the correlation between tAI and scores will be maximized.
+        expression: iterable of float
+            Expression of the provided reference sequences. Can be experimental measurements (original version)
+            or CUB measures that are positively correlated with expression (see Sabi & Tuller, DNA Research, 2014)
+        optimize_wc: bool
+            Whether to optimize s-values for Watson-Crick base pairs, by default False
+        method: str
+            Optimization algorithm to use, by default 'Powell'
+        kwargs:
+            Additional parameters to be passed to scipy.optimize.minimize
+
+        Returns
+        -------
+        scipy.optimize.OptimizeResult
+            The optimization result
+        """
+        if len(ref_seq) != len(expression):
+            raise ValueError(
+                f'lengths of ref_seq, expression do not match: {len(ref_seq)} != {len(expression)}')
+        # Ensure values are finite
+        valid = np.isfinite(expression)
+        expression = [e for e, v in zip(expression, valid) if v]
+        ref_seq = [s for s, v in zip(ref_seq, valid) if v]
+        print(f'optimize_s_values: removed {(~valid).sum():,d} non-finite values')
+
+        def func(weights):
+            self.s_values["weight"] = weights
+            self.weights = self._calc_weights()
+            self.log_weights = np.log(self.weights)
+            return -stats.spearmanr(self.get_score(ref_seq), expression).statistic
+
+        x0 = np.array(self.s_values["weight"])
+
+        def get_bounds(row):
+            if row["anti"] == reverse_complement(row["cod"]) and not optimize_wc:
+                return 0, 0
+            return 0, 1
+
+        bounds = self.s_values.apply(get_bounds, axis=1).to_list()
+        return optimize.minimize(func, x0=x0, bounds=bounds, method=method, **kwargs)
 
     def _calc_weights(self):
         # init the dataframe
