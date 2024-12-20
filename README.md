@@ -12,6 +12,8 @@ This package provides codon usage bias (CUB) analysis tools for genomic sequence
     - Improved estimation
     - Effective number of codon pairs (and k-mers) (ENcp)
 - [tRNA Adaptation Index (tAI)](https://codon-bias.readthedocs.io/en/latest/codonbias.html#codonbias.scores.TrnaAdaptationIndex)
+    - Download tRNA gene copy numbers from [GtRNAdb](http://gtrnadb.ucsc.edu/)
+    - Train tAI model parameters (s-values) using expression levels
 - [Codon Pair Bias (CPB/CPS)](https://codon-bias.readthedocs.io/en/latest/codonbias.html#codonbias.scores.CodonPairBias)
 - [Relative Codon Bias Score (RCBS)](https://codon-bias.readthedocs.io/en/latest/codonbias.html#codonbias.scores.RelativeCodonBiasScore)
 - [Normalized Translational Efficiency (nTE)](https://codon-bias.readthedocs.io/en/latest/codonbias.html#codonbias.scores.NormalizedTranslationalEfficiency)
