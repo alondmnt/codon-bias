@@ -40,7 +40,7 @@ The package contains 6 submodules:
 
 """
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 __author__ = 'Alon Diament'
 
 import codonbias.utils
