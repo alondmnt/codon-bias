@@ -34,7 +34,7 @@ Read on [Read the Docs](https://codon-bias.readthedocs.org).
 
 ## cite
 
-Diament, A. (2022). codon-bias (python package) (Version 0.3.0). https://doi.org/10.5281/zenodo.8039452
+Diament, A. (2022). codon-bias (python package). https://doi.org/10.5281/zenodo.8039451
 
 ## contributing
 

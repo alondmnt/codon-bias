@@ -5,7 +5,7 @@ authors:
   given-names: "Alon"
   orcid: "https://orcid.org/0000-0002-3939-5703"
 title: "codon-bias (python package)"
-version: 0.3.0
-doi: 10.5281/zenodo.8039452
+version: 0.3.3
+doi: 10.5281/zenodo.8039451
 date-released: 2022-10-28
 url: "https://github.com/alondmnt/codon-bias"
