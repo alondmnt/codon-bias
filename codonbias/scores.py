@@ -502,7 +502,7 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
     def _calc_BCC(self, BNC):
         """ Compute the background CODON composition of the sequence. """
         BCC = self.template.copy()
-        BCC['bcc'] = [np.product([BNC[c] for c in cod])
+        BCC['bcc'] = [np.prod([BNC[c] for c in cod])
                       for cod in BCC.index.get_level_values('codon')]
         BCC = BCC['bcc']
         BCC /= BCC.groupby('aa').sum()
