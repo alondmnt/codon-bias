@@ -184,7 +184,7 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         will be used to select the optimal codons.
     thresh : float, optional
         Minimal ratio between the frequency of a codon and the most
-        frequent one in order to be set as optimal, by default 0.95
+        frequent one in order to be set as optimal, by default 0.8
     genetic_code : int, optional
         NCBI genetic code ID, by default 1
     ignore_stop : bool, optional
@@ -194,7 +194,7 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         Pseudocount correction for normalized codon frequencies. this is
         effective when `ref_seq` contains few short sequences. by default 1
     """
-    def __init__(self, ref_seq='', weights=None, thresh=0.95, genetic_code=1,
+    def __init__(self, ref_seq='', weights=None, thresh=0.8, genetic_code=1,
                  ignore_stop=True, pseudocount=1):
         self.thresh = thresh
         self.counter = CodonCounter(genetic_code=genetic_code,
