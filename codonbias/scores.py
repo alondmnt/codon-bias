@@ -193,7 +193,7 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
 
         self.weights = self.counter.count(ref_seq)\
             .get_aa_table(normed=True, pseudocount=pseudocount)\
-            .groupby('aa').apply(lambda x: x / x.max())
+            .groupby('aa', group_keys=False).apply(lambda x: x / x.max())
         self.weights[self.weights >= self.thresh] = 1  # optimal
         self.weights[self.weights < self.thresh] = 0  # non-optimal
         self.weights = self.weights.droplevel('aa')
@@ -450,7 +450,7 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         if self.mean == 'unweighted':
             # at least 2 samples from AA to be included
             F = F.loc[(N > 1) & (F['F'] > 1e-6) & np.isfinite(F['F'])]\
-                .groupby('deg').mean().join(deg_count, how='right')
+                .groupby('deg', group_keys=False).mean().join(deg_count, how='right')
         elif self.mean == 'weighted':
             # weighted mean: Sun, Yang & Xia 2013
             F['F'] = F['F'] * F['N']
@@ -642,7 +642,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
     def _calc_weights(self):
         # init the dataframe
         weights = self.counter.count('').get_aa_table().to_frame('count')
-        weights = weights.join(weights.groupby('aa').size().to_frame('deg'))\
+        weights = weights.join(weights.groupby('aa', group_keys=False).size().to_frame('deg'))\
             .reset_index().drop(columns=['aa'])[['codon', 'deg']]
         # columns: codon, deg
 
