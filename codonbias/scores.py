@@ -162,9 +162,11 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
 
     This model determines the optimal codons for each amino acid based
     on one of two ways:
+
     1. Their frequency in the given set of reference sequences
     `ref_seq`. This is an approximate score, as the original study
     determined which codons are optimal based on tRNA abundances.
+
     2. Using codon weights provided in `weights`. These weights can be,
     for example, tAI weights (that are based on tRNA copy numbers).
 

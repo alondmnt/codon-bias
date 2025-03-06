@@ -101,12 +101,12 @@ class PairwiseScore(object):
 
 class CodonUsageFrequency(PairwiseScore):
     """
-    Codon Usage Frequency (CUFS, Diament, Pinter & Tuller, Nature
+    Codon Usage Frequency (CUFS) (Diament, Pinter & Tuller, Nature
     Communications, 2014).
-
+  
     This is a distance metric between pairs of sequences based on their
     distribution of codons. It employs a distance metric for probability
-    distrbutions (Endres & Schindelin, 2003) that is based on KL
+    distributions (Endres & Schindelin, 2003) that is based on KL
     divergence. The original implementation used the parameter
     `pseudocount`=0.
 
@@ -126,7 +126,7 @@ class CodonUsageFrequency(PairwiseScore):
     pseudocount : int, optional
         Pseudocount correction for normalized codon frequencies, by
         default 1
-    n_jobs : _type_, optional
+    n_jobs : int, optional
         Number of processes to use for matrix computation. If None is
         provided then the number returned by os.cpu_count() is used, by
         default None

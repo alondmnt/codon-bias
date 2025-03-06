@@ -95,8 +95,8 @@ class CodonCounter(object):
     def get_codon_table(self, normed=False, pseudocount=1, nonzero=False):
         """
         Return codon counts as a Series (for a single summary) or
-        DataFrame (for multiple summaries, when `sum_seqs` is False).
-        Normalized frequencies (when `normed`=True) are corrected by
+        DataFrame (for multiple summaries, when sum_seqs is False).
+        Normalized frequencies (when normed=True) are corrected by
         default using pseudocounts.
 
         Parameters
@@ -140,9 +140,9 @@ class CodonCounter(object):
     def get_aa_table(self, normed=False, pseudocount=1, nonzero=False):
         """
         Return codon counts as a Series (for a single summary) or
-        DataFrame (for multiple summaries, when `sum_seqs` is False),
+        DataFrame (for multiple summaries, when sum_seqs is False),
         indexed by the codon and the encoded amino acid. Normalized
-        frequencies (when `normed`=True) are corrected by default using
+        frequencies (when normed=True) are corrected by default using
         pseudocounts.
 
         Parameters
@@ -331,9 +331,9 @@ class BaseCounter(object):
     def get_table(self, normed=False, pseudocount=1):
         """
         Return base counts as a Series (for a single summary) or
-        DataFrame (for multiple summaries, when `sum_seqs` is False),
+        DataFrame (for multiple summaries, when sum_seqs is False),
         indexed by the nucletoide k-mer. Normalized frequencies (when
-        `normed`=True) are corrected by default using pseudocounts.
+        normed=True) are corrected by default using pseudocounts.
 
         Parameters
         ----------
