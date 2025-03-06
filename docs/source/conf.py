@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath('../../'))
 # -- Project information -----------------------------------------------------
 
 project = 'codon-bias'
-copyright = '2022-2024, Alon Diament'
+copyright = '2022-2025, Alon Diament'
 author = 'Alon Diament'
 
 
