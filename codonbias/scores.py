@@ -161,17 +161,27 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
     Frequency of Optimal Codons (FOP, Ikemura, J Mol Biol, 1981).
 
     This model determines the optimal codons for each amino acid based
-    on their frequency in the given set of reference sequences
-    `ref_seq`. Multiple codons may be selected as optimal based on
-    `thresh`. The score for a sequence is the fraction of codons in
-    the sequence deemed optimal. The returned vector for a sequence is
-    a binary array where optimal positions contain 1 and non-optimal
-    ones contain 0.
+    on one of two ways:
+    1. Their frequency in the given set of reference sequences
+    `ref_seq`. This is an approximate score, as the original study
+    determined which codons are optimal based on tRNA abundances.
+    2. Using codon weights provided in `weights`. These weights can be,
+    for example, tAI weights (that are based on tRNA copy numbers).
+
+    Multiple codons may be selected as optimal based on `thresh`. The
+    score for a sequence is the fraction of codons in the sequence deemed
+    optimal. The returned vector for a sequence is a binary array where
+    optimal positions contain 1 and non-optimal ones contain 0.
 
     Parameters
     ----------
-    ref_seq : iterable of str
-        A set of reference DNA sequences for codon usage statistics.
+    ref_seq : iterable of str, optional
+        A set of reference DNA sequences for codon usage statistics. If
+        provided, codon frequencies in the reference set will be used to
+        select the optimal codons.
+    weights : pandas.DataFrame or pandas.Series, optional
+        A DataFrame / Series with codon weights. If provided, the weights
+        will be used to select the optimal codons.
     thresh : float, optional
         Minimal ratio between the frequency of a codon and the most
         frequent one in order to be set as optimal, by default 0.95
@@ -184,16 +194,34 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         Pseudocount correction for normalized codon frequencies. this is
         effective when `ref_seq` contains few short sequences. by default 1
     """
-    def __init__(self, ref_seq, thresh=0.95, genetic_code=1,
+    def __init__(self, ref_seq='', weights=None, thresh=0.95, genetic_code=1,
                  ignore_stop=True, pseudocount=1):
         self.thresh = thresh
         self.counter = CodonCounter(genetic_code=genetic_code,
                                     ignore_stop=ignore_stop)
         self.pseudocount = pseudocount
-
         self.weights = self.counter.count(ref_seq)\
-            .get_aa_table(normed=True, pseudocount=pseudocount)\
-            .groupby('aa', group_keys=False).apply(lambda x: x / x.max())
+            .get_aa_table(normed=True, pseudocount=pseudocount)
+        if ref_seq is not None and len(ref_seq) > 0:
+            pass
+        elif weights is not None:
+            # Ensure that weights have the same index as the counter
+            try:
+                if type(weights) == pd.Series:
+                    weights = weights.to_frame('weights')
+                if 'aa' not in weights.index.names:
+                    self.weights = weights.join(
+                        self.weights.rename('dummy'))\
+                        .drop(columns=['dummy'])
+                self.weights = self.weights.iloc[:, 0]
+            except KeyError:
+                raise ValueError('ensure that weights is properly formatted, with levels [codon] or [aa, codon]')
+        else:
+            raise ValueError('either ref_seq or weights must be provided')
+
+        self.weights = self.weights\
+                .groupby('aa', group_keys=False)\
+                .apply(lambda x: x / x.max())
         self.weights[self.weights >= self.thresh] = 1  # optimal
         self.weights[self.weights < self.thresh] = 0  # non-optimal
         self.weights = self.weights.droplevel('aa')
