@@ -21,11 +21,14 @@ extensions = [
 nbsphinx_allow_errors = True   # Continue building even if there are execution errors
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ['source/_templates']
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+
+# Set the source directory
+source_path = 'source'
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = 'sphinx_rtd_theme'  # Read the Docs theme
