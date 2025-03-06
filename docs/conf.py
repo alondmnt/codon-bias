@@ -14,7 +14,11 @@ extensions = [
     'sphinx.ext.napoleon',     # Support for Google/NumPy-style docstrings
     'sphinx.ext.viewcode',     # Add links to source code
     'sphinx.ext.githubpages',  # Create .nojekyll file for GitHub Pages
+    'nbsphinx',               # Support for Jupyter notebooks
 ]
+
+# -- Options for nbsphinx ---------------------------------------------------
+nbsphinx_allow_errors = True   # Continue building even if there are execution errors
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
