@@ -2,6 +2,7 @@ from collections import Counter
 from itertools import product
 import os
 
+import numpy as np
 import pandas as pd
 
 gc = pd.read_csv(f'{os.path.dirname(__file__)}/genetic_code_ncbi.csv',
@@ -65,14 +66,19 @@ class CodonCounter(object):
     def _count(self, seqs):
         if isinstance(seqs, str):
             return self._count_single(seqs)
+        elif isinstance(seqs, list) or isinstance(seqs, np.ndarray):
+            counts = pd.concat([self._count_single(s) for s in seqs], axis=1)
+        else:
+            raise ValueError(f'unknown sequence type: {type(seqs)}')
 
-        counts = pd.concat([self._count_single(s) for s in seqs], axis=1)
         if self.sum_seqs:
             return counts.sum(axis=1)
         else:
             return counts
 
     def _count_single(self, seq):
+        if not isinstance(seq, str):
+            raise ValueError(f'sequence is not a string: {type(seq)}')
         seq = seq.upper().replace('U', 'T')
 
         return pd.Series(Counter(
@@ -312,15 +318,20 @@ class BaseCounter(object):
     def _count(self, seqs):
         if isinstance(seqs, str):
             return self._count_single(seqs)
+        elif isinstance(seqs, list) or isinstance(seqs, np.ndarray):
+            counts = pd.concat([self._count_single(s) for s in seqs], axis=1)\
+                .fillna(0)
+        else:
+            raise ValueError(f'unknown sequence type: {type(seqs)}')
 
-        counts = pd.concat([self._count_single(s) for s in seqs], axis=1)\
-            .fillna(0)
         if self.sum_seqs:
             return counts.sum(axis=1)
         else:
             return counts
 
     def _count_single(self, seq):
+        if not isinstance(seq, str):
+            raise ValueError(f'sequence is not a string: {type(seq)}')
         seq = seq.upper().replace('U', 'T')
 
         last_pos = len(seq) - self.k_mer + 1

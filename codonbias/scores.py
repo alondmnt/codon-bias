@@ -45,8 +45,12 @@ class ScalarScore(object):
         >>> EffectiveNumberOfCodons().get_score('ACGACGGAGGAG', slice=slice(6))
         44.33333333333333
         """
-        if not isinstance(seq, str):
+        if isinstance(seq, str):
+            pass
+        elif isinstance(seq, list) or isinstance(seq, np.ndarray):
             return np.array([self.get_score(s, slice=slice, **kwargs) for s in seq])
+        else:
+            raise ValueError(f'unknown sequence type: {type(seq)}')
 
         if slice is not None:
             return self._calc_score(seq[slice], **kwargs)
@@ -96,6 +100,10 @@ class VectorScore(object):
                 return self._calc_vector(seq[slice], **kwargs)
             else:
                 return self._calc_vector(seq, **kwargs)
+        elif isinstance(seq, list) or isinstance(seq, np.ndarray):
+            pass
+        else:
+            raise ValueError(f'unknown sequence type: {type(seq)}')
 
         dtype = object if slice is None \
             and np.unique([len(s) for s in seq]).size > 1 and not pad else None
@@ -144,8 +152,12 @@ class WeightScore(object):
             N by C array with a weights vector for each of the N provided
             sequences.
         """
-        if not isinstance(seq, str):
+        if isinstance(seq, str):
+            pass
+        elif isinstance(seq, list) or isinstance(seq, np.ndarray):
             return np.array([self.get_weights(s, slice=slice, **kwargs) for s in seq])
+        else:
+            raise ValueError(f'unknown sequence type: {type(seq)}')
 
         if slice is not None:
             return self._calc_seq_weights(seq[slice], **kwargs)
