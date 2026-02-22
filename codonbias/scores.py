@@ -8,6 +8,12 @@ from scipy import stats, optimize
 from .stats import CodonCounter, BaseCounter
 from .utils import fetch_GCN_from_GtRNAdb, geomean, mean, reverse_complement
 
+try:
+    from ._enc_math import _compute_enc_core_cython
+    HAS_CYTHON = True
+except ImportError:
+    HAS_CYTHON = False
+    _compute_enc_core_cython = None
 
 class ScalarScore(object):
     """
@@ -483,6 +489,14 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         return 1 / self._calc_F(seq, background=background)[0]['F']
 
     def _calc_score(self, seq, background=None):
+        if HAS_CYTHON and background is None and self.k_mer == 1 and self.mean == 'weighted' and self.robust:
+            if not isinstance(seq, (str, bytes)) or not seq:
+                return np.nan
+
+            # Using memoryview(bytes) ensures Cython sees a contiguous buffer
+            b_seq = seq.encode('ascii') if isinstance(seq, str) else seq
+            return _compute_enc_core_cython(memoryview(b_seq), bool(self.bg_correction))
+
         F, P, N = self._calc_F(seq, background=background)
 
         F['deg'] = self.aa_deg
@@ -491,7 +505,7 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
 
         if self.mean == 'unweighted':
             # at least 2 samples from AA to be included
-            F = F.loc[(N > 1) & (F['F'] > 1e-6) & np.isfinite(F['F'])]\
+            F = F.loc[(N > 1) & (F['F'] > 1e-6) & np.isfinite(F['F'])] \
                 .groupby('deg', group_keys=False).mean().join(deg_count, how='right')
         elif self.mean == 'weighted':
             # weighted mean: Sun, Yang & Xia 2013
@@ -503,12 +517,12 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
 
         # missing AA cases
         miss_3 = np.isnan(F.loc[3, 'F'])
-        F['F'] = F['F'].fillna(1/F.index.to_series())  # use 1/deg
+        F['F'] = F['F'].fillna(1 / F.index.to_series())  # use 1/deg
         if miss_3:
-            F.loc[3, 'F'] = 0.5*(F.loc[2, 'F'] + F.loc[4, 'F'])
+            F.loc[3, 'F'] = 0.5 * (F.loc[2, 'F'] + F.loc[4, 'F'])
 
         ENC = (F['deg_count'] / F['F']).sum()
-        return min([len(P), ENC]) ** (1/self.k_mer)
+        return min([len(P), ENC]) ** (1 / self.k_mer)
 
     def _calc_F(self, seq, background=None):
         counts = self.counter.count(seq).get_aa_table()
