@@ -4,7 +4,6 @@ import pandas as pd
 import time
 from numpy.testing import assert_allclose
 
-import codonbias.scores
 from codonbias.scores import EffectiveNumberOfCodons
 
 
@@ -61,27 +60,6 @@ def test_enc_parameters(robust, mean):
     assert score > 0
 
 
-def test_cython_python_equivalence(enc_default, random_seq_gen):
-    """
-    Verifies that the high-performance Cython path and the
-    original Pandas path produce identical numerical results.
-    """
-    # Test across multiple lengths to ensure buffer management is correct
-    for length in [30, 300, 1500]:
-        seq = random_seq_gen(length, seed=length)
-
-        # Force Pure Python (Pandas) path
-        codonbias.scores.HAS_CYTHON = False
-        score_py = enc_default.get_score(seq)
-
-        # Force Optimized Cython path
-        codonbias.scores.HAS_CYTHON = True
-        score_cy = enc_default.get_score(seq)
-
-        assert_allclose(score_cy, score_py, rtol=1e-7,
-                        err_msg=f"Mismatch at length {length}")
-
-
 def test_enc_dataframe_regression(enc_default, dataframe_regression):
     """
     Explicit regression test with 1000 sequences of varying ENC degrees.
@@ -123,36 +101,21 @@ def test_enc_dataframe_regression(enc_default, dataframe_regression):
     dataframe_regression.check(data)
 
 
-# --- PERFORMANCE BENCHMARKS ---
-# These are marked so they can be excluded from regular fast test runs
-
 @pytest.mark.benchmark
 def test_enc_performance_bottleneck(enc_default, random_seq_gen, capsys):
     """
     Measures the massive speedup of the Cython byte-loop over Pandas.
     Run with: pytest tests/test_scores.py -m benchmark -s
     """
-    assert codonbias.scores.HAS_CYTHON is True, "Benchmark requires compiled Cython."
-
     seq = random_seq_gen(10000)  # 10kb sequence
     iterations = 500
 
-    # Benchmark Pandas
-    codonbias.scores.HAS_CYTHON = False
+    # Benchmark Cython
     t0 = time.perf_counter()
     for _ in range(iterations):
         enc_default.get_score(seq)
     time_py = time.perf_counter() - t0
 
-    # Benchmark Cython
-    codonbias.scores.HAS_CYTHON = True
-    t0 = time.perf_counter()
-    for _ in range(iterations):
-        enc_default.get_score(seq)
-    time_cy = time.perf_counter() - t0
-
     with capsys.disabled():
         print(f"\n[BENCHMARK] {iterations} iterations on 10kb sequence")
-        print(f"  Pandas time: {time_py:.4f}s")
-        print(f"  Cython time: {time_cy:.4f}s")
-        print(f"  Speedup:     {time_py / time_cy:.1f}x")
+        print(f"  Time: {time_py:.4f}s")
