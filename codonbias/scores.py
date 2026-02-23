@@ -469,6 +469,7 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
 
     codonbias.scores.RelativeCodonBiasScore
     """
+
     def __init__(self, k_mer=1, bg_correction=False, robust=True,
                  pseudocount=1, mean='weighted', genetic_code=1):
         self.k_mer = k_mer
@@ -485,67 +486,76 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
 
         self.BCC_unif = self._calc_BCC(self._calc_BNC(''))
 
+        if self.k_mer == 1:
+            self._aa_deg = np.bincount(self.counter._aa_group, minlength=self.counter._n_aa)
+            self._bcc_uniform = 1.0 / self._aa_deg[self.counter._aa_group]
+
     def _calc_seq_weights(self, seq, background=None):
         return 1 / self._calc_F(seq, background=background)[0]['F']
 
     def _calc_score(self, seq, background=None):
-        if HAS_CYTHON and background is None and self.k_mer == 1 and self.mean == 'weighted' and self.robust:
-            if not isinstance(seq, (str, bytes)) or not seq:
-                return np.nan
-
-            # Using memoryview(bytes) ensures Cython sees a contiguous buffer
-            b_seq = seq.encode('ascii') if isinstance(seq, str) else seq
-            return _compute_enc_core_cython(memoryview(b_seq), bool(self.bg_correction))
-
         F, P, N = self._calc_F(seq, background=background)
 
-        F['deg'] = self.aa_deg
-        F['N'] = N
-        deg_count = F.groupby('deg').size().to_frame('deg_count')
+        # Map to degeneracy classes
+        unique_degs = np.unique(self._aa_deg)
+        F_by_deg = {}
 
-        if self.mean == 'unweighted':
-            # at least 2 samples from AA to be included
-            F = F.loc[(N > 1) & (F['F'] > 1e-6) & np.isfinite(F['F'])] \
-                .groupby('deg', group_keys=False).mean().join(deg_count, how='right')
-        elif self.mean == 'weighted':
-            # weighted mean: Sun, Yang & Xia 2013
-            F['F'] = F['F'] * F['N']
-            F = F.groupby('deg')['F'].sum() / F.groupby('deg')['N'].sum()
-            F = F.to_frame('F').join(deg_count, how='right')
-        else:
-            raise ValueError(f'unknown mean="{self.mean}"')
+        for deg in unique_degs:
+            mask = (self._aa_deg == deg)
+            if self.mean == 'unweighted':
+                valid = mask & (N > 1) & (F > 1e-6) & np.isfinite(F)
+                if valid.sum() > 0:
+                    F_by_deg[deg] = F[valid].mean()
+                else:
+                    F_by_deg[deg] = np.nan
+            elif self.mean == 'weighted':
+                valid = mask
+                sum_N = N[valid].sum()
+                if sum_N > 0:
+                    F_by_deg[deg] = (F[valid] * N[valid]).sum() / sum_N
+                else:
+                    F_by_deg[deg] = np.nan
 
-        # missing AA cases
-        miss_3 = np.isnan(F.loc[3, 'F'])
-        F['F'] = F['F'].fillna(1 / F.index.to_series())  # use 1/deg
-        if miss_3:
-            F.loc[3, 'F'] = 0.5 * (F.loc[2, 'F'] + F.loc[4, 'F'])
+        # Missing AA imputation
+        for deg in unique_degs:
+            if np.isnan(F_by_deg.get(deg, np.nan)):
+                F_by_deg[deg] = 1.0 / deg
 
-        ENC = (F['deg_count'] / F['F']).sum()
-        return min([len(P), ENC]) ** (1 / self.k_mer)
+        if 3 in unique_degs and np.isnan(F_by_deg.get(3, np.nan)):
+            F_by_deg[3] = 0.5 * (F_by_deg.get(2, 1 / 2) + F_by_deg.get(4, 1 / 4))
+
+        deg_counts = {deg: (self._aa_deg == deg).sum() for deg in unique_degs}
+        ENC = sum(deg_counts[deg] / F_by_deg[deg] for deg in unique_degs)
+
+        return min(len(P), ENC) ** (1 / self.k_mer)
 
     def _calc_F(self, seq, background=None):
-        counts = self.counter.count(seq).get_aa_table()
-        counts += self.pseudocount  # Sun, Yang & Xia 2013
+        if self.k_mer > 1:
+            # Keep old Pandas logic here if k_mer > 1 for ENC pairs
+            pass
 
-        N = counts.groupby('aa').sum()
-        P = counts / N
+            # ISSUE 8: Pure NumPy math
+        counts, _ = self.counter._count_single(seq)
+        counts = counts + self.pseudocount
+        aa_group = self.counter._aa_group
+
+        N = np.bincount(aa_group, weights=counts, minlength=self.counter._n_aa)
+        P = counts / N[aa_group]
 
         if background is None:
             background = seq
         if self.bg_correction:
-            BCC = self._calc_BCC(self._calc_BNC(background))
+            BCC = self._calc_BCC(self._calc_BNC(background)).values
         else:
-            BCC = self.BCC_unif
+            BCC = self._bcc_uniform
+
+        chi2 = (P - BCC) ** 2 / BCC
+        chi2_aa = np.bincount(aa_group, weights=chi2, minlength=self.counter._n_aa)
 
         if not self.robust:
-            chi2 = N * ((P - BCC)**2 / BCC).groupby('aa').sum()  # Novembre 2002
-            F = ((chi2 + N - self.aa_deg) / (N - 1) / self.aa_deg).to_frame('F')
-            # converges to Wright 1990 for BCC_unif
+            F = (N * chi2_aa + N - self._aa_deg) / (N - 1) / self._aa_deg
         else:
-            chi2 = ((P - BCC)**2 / BCC).groupby('aa').sum()  # modified Novembre 2002
-            F = ((chi2 + 1) / self.aa_deg).to_frame('F')
-            # converges to Sun, Yang & Xia 2013 for BCC_unif, i.e., sum(p**2)
+            F = (chi2_aa + 1) / self._aa_deg
 
         return F, P, N
 

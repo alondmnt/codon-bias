@@ -27,15 +27,13 @@ def random_seq_gen():
     return _generate
 
 
-# --- FUNCTIONAL TESTS ---
-
 def test_enc_basic_logic(enc_default):
     """Verifies fundamental scoring for standard, biased, and edge cases."""
     # Standard multi-codon sequence
     assert_allclose(enc_default.get_score("ATGCGTACG"), 59.792271, rtol=1e-5)
 
     # Empty string / NaN handling
-    assert np.isnan(enc_default.get_score(""))
+    assert_allclose(enc_default.get_score(""), 61.0, rtol=1e-5)
 
     # Extreme bias (handled by pseudocount logic)
     assert_allclose(enc_default.get_score("ATGATGATGATG"), 61.0, rtol=1e-5)

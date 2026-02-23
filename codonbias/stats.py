@@ -32,6 +32,7 @@ class CodonCounter(object):
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by default True
     """
+
     def __init__(self, seqs=None, k_mer=1, sum_seqs=True, concat_index=True,
                  genetic_code=1, ignore_stop=True):
         self.k_mer = k_mer
@@ -39,8 +40,31 @@ class CodonCounter(object):
         self.sum_seqs = sum_seqs
         self.genetic_code = str(genetic_code)
         self.ignore_stop = ignore_stop
+
+        # ISSUE 8: Pre-compute static index arrays for NumPy path
+        self._init_arrays()
+
         if seqs is not None:
             self.count(seqs)
+
+    def _init_arrays(self):
+        code = gc[[self.genetic_code]].reset_index().rename(
+            columns={self.genetic_code: 'aa', 'index': 'codon'})
+        if self.ignore_stop:
+            code = code.loc[code['aa'] != '*']
+
+        # Codon mapping
+        self._idx_to_codon = code['codon'].tolist()
+        self._codon_to_idx = {c: i for i, c in enumerate(self._idx_to_codon)}
+
+        # Amino acid mapping
+        unique_aa = code['aa'].unique()
+        self._n_aa = len(unique_aa)
+        self._aa_to_idx = {aa: i for i, aa in enumerate(unique_aa)}
+        self._idx_to_aa = {i: aa for aa, i in self._aa_to_idx.items()}
+
+        # Array mapping each codon index to its amino acid index (shape: n_codons,)
+        self._aa_group = np.array([self._aa_to_idx[aa] for aa in code['aa']])
 
     def count(self, seqs):
         """
@@ -57,32 +81,63 @@ class CodonCounter(object):
         CodonCounter
             CodonCounter object (self) with updated counts
         """
-        self.counts = self._format_counts(self._count(seqs))
-        if self.counts.ndim == 1:
-            self.counts = self.counts.rename('count')
+        res = self._count(seqs)
+
+        # ISSUE 8 API BOUNDARY: Wrap the NumPy array back into Pandas Series/DataFrame
+        if self.k_mer == 1:
+            if res.ndim == 1:
+                self.counts = pd.Series(res, index=self._idx_to_codon, name='count')
+            else:
+                self.counts = pd.DataFrame(res, index=self._idx_to_codon)
+            self.counts.index.name = 'codon'
+        else:
+            self.counts = self._format_counts(res)
+            if self.counts.ndim == 1:
+                self.counts = self.counts.rename('count')
 
         return self
 
     def _count(self, seqs):
         if isinstance(seqs, str):
-            return self._count_single(seqs)
+            res = self._count_single(seqs)
+            if self.k_mer == 1:
+                return res[0]  # Just return codon counts array to count()
+            return res
         elif isinstance(seqs, list) or isinstance(seqs, np.ndarray):
-            counts = pd.concat([self._count_single(s) for s in seqs], axis=1)
+            if self.k_mer == 1:
+                counts = np.column_stack([self._count_single(s)[0] for s in seqs])
+                if self.sum_seqs:
+                    return counts.sum(axis=1)
+                return counts
+            else:
+                counts = pd.concat([self._count_single(s) for s in seqs], axis=1)
+                if self.sum_seqs:
+                    return counts.sum(axis=1)
+                return counts
         else:
             raise ValueError(f'unknown sequence type: {type(seqs)}')
-
-        if self.sum_seqs:
-            return counts.sum(axis=1)
-        else:
-            return counts
 
     def _count_single(self, seq):
         if not isinstance(seq, str):
             raise ValueError(f'sequence is not a string: {type(seq)}')
         seq = seq.upper().replace('U', 'T')
 
+        # Fast NumPy path for k_mer == 1
+        if self.k_mer == 1:
+            counts = np.zeros(len(self._codon_to_idx), dtype=float)
+            for i in range(0, len(seq) - 2, 3):
+                idx = self._codon_to_idx.get(seq[i:i + 3])
+                if idx is not None:
+                    counts[idx] += 1
+
+            aa_counts = np.bincount(
+                self._aa_group, weights=counts, minlength=self._n_aa)
+
+            return counts, aa_counts
+
+        # Legacy path for k_mer > 1 (e.g., Codon Pair Bias)
         return pd.Series(Counter(
-            [seq[i:i + 3*self.k_mer]
+            [seq[i:i + 3 * self.k_mer]
              for i in range(0, len(seq), 3)]), dtype=int)
 
     def _format_counts(self, counts):
