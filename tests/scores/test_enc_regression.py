@@ -60,12 +60,15 @@ def enc_default():
 @pytest.fixture
 def random_seq_gen():
     """Factory fixture to generate random DNA sequences of a given length."""
+    rng = np.random.default_rng()
 
-    def _generate(length, seed=None):
+    def _generate(length, seed=None, p=None):
+        nonlocal rng
         if seed is not None:
-            np.random.seed(seed)
-        bases = ['A', 'C', 'G', 'T']
-        return ''.join(np.random.choice(bases, size=length))
+            rng = np.random.default_rng(seed)
+
+        bases = np.array(['A', 'C', 'G', 'T'])
+        return ''.join(rng.choice(bases, size=length, p=p))
 
     return _generate
 
@@ -104,44 +107,41 @@ def test_enc_parameters(robust, mean):
     assert score > 0
 
 
-def test_enc_dataframe_regression(enc_default, dataframe_regression):
+def test_enc_dataframe_regression(enc_default, random_seq_gen, dataframe_regression):
     """
     Explicit regression test with 1000 sequences of varying ENC degrees.
     Generates sequences with different GC contents to ensure a range
     of scores (high and low bias) are tested and matched.
     """
-    rng = np.random.default_rng(42)  # Fixed seed for reproducibility
-    bases = np.array(['A', 'C', 'G', 'T'])
+    # Use a local generator just for the lengths
+    length_rng = np.random.default_rng(42)
 
     all_scores = []
 
-    # Generate 1000 sequences with varying bias
     for i in range(1000):
-        # We vary the probability distribution to get different ENC results
-        # Some iterations will be very biased, others will be uniform
-        bias_factor = (i % 10) / 10.0  # Cycle through bias levels
+        bias_factor = (i % 10) / 10.0
         p = np.array([0.25, 0.25, 0.25, 0.25])
 
-        # Shift probability to create high/low ENC scenarios
         if i % 2 == 0:
             p = np.array([0.1 + 0.4 * bias_factor, 0.4 - 0.3 * bias_factor, 0.2, 0.3])
             p /= p.sum()
 
-        length = rng.integers(100, 500) * 3
-        seq = "".join(rng.choice(bases, size=length, p=p))
+        length = length_rng.integers(100, 500) * 3
+
+        # Seed the fixture on the first iteration to lock in reproducibility
+        current_seed = 42 if i == 0 else None
+
+        # Generate the sequence via the fixture
+        seq = random_seq_gen(length, seed=current_seed, p=p)
 
         score = enc_default.get_score(seq)
         all_scores.append(score)
 
-    # We do not store the sequences to keep the regression file small
-    # Just the scores which represent the mathematical output
     data = pd.DataFrame({
         "iteration": np.arange(1000),
         "enc_score": all_scores
     })
 
-    # The first time this runs, it creates a baseline file.
-    # Subsequent runs compare against that file.
     dataframe_regression.check(data)
 
 
