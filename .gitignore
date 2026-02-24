@@ -2,7 +2,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
-_*
 
 # C extensions
 *.so
@@ -134,3 +133,5 @@ dmypy.json
 docs/build
 
 *.mat
+
+*.idea
