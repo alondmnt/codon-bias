@@ -1,15 +1,13 @@
 import pytest
 
 import os
-import urllib.request
 import gzip
 import hashlib
 
-
 EXPECTED_MD5 = "aaee0253df6f7d1df7df00e84d582fd4"
 
-
 def get_file_md5(file_path):
+    """Calculates the MD5 sum of a file efficiently by reading in chunks."""
     md5_hash = hashlib.md5()
     with open(file_path, "rb") as f:
         # Read in 4K chunks to avoid loading large files entirely into memory
@@ -17,39 +15,33 @@ def get_file_md5(file_path):
             md5_hash.update(chunk)
     return md5_hash.hexdigest()
 
-
 @pytest.fixture(scope="session")
 def ecoli_seqs():
     """
-    Downloads, parses, and caches the E. coli K-12 coding sequences.
+    Parses the local E. coli K-12 coding sequences.
     Scope is 'session' so it only runs once per pytest invocation.
-    Includes MD5 integrity checking and self-healing cache.
+    Includes MD5 integrity checking to ensure the local file isn't corrupted.
     """
-    url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_ASM584v2_cds_from_genomic.fna.gz"
+    # Look for the file in the .test_data folder relative to this script
+    test_data_dir = os.path.join(os.path.dirname(__file__), ".test_data")
+    file_path = os.path.join(test_data_dir, "ecoli_cds.fna.gz")
 
-    # Cache the file locally in a hidden folder so it isn't re-downloaded every run
-    cache_dir = os.path.join(os.path.dirname(__file__), ".test_data")
-    os.makedirs(cache_dir, exist_ok=True)
-    file_path = os.path.join(cache_dir, "ecoli_cds.fna.gz")
-
-    # 1. Validate the cache (Self-Healing)
-    # If the file exists but the MD5 doesn't match, the cache is corrupt.
-    if os.path.exists(file_path):
-        if get_file_md5(file_path) != EXPECTED_MD5:
-            os.remove(file_path)  # Remove it to force a fresh download below
-
-    # 2. Download and verify
+    # 1. Ensure the file actually exists locally
     if not os.path.exists(file_path):
-        urllib.request.urlretrieve(url, file_path)
-        actual_md5 = get_file_md5(file_path)
+        raise FileNotFoundError(
+            f"Missing test data! Expected to find 'ecoli_cds.fna.gz' at:\n{file_path}\n"
+            "Please ensure the file is saved in the correct directory."
+        )
 
-        if actual_md5 != EXPECTED_MD5:
-            raise ValueError(
-                f"\nMD5 mismatch for downloaded genome file!\n"
-                f"Expected: '{EXPECTED_MD5}'\n"
-                f"Actual:   '{actual_md5}'\n"
-                f"-> If this is your first time running this, copy the 'Actual' hash above and update the EXPECTED_MD5 variable in your code."
-            )
+    # 2. Verify file integrity
+    actual_md5 = get_file_md5(file_path)
+    if actual_md5 != EXPECTED_MD5:
+        raise ValueError(
+            f"\nMD5 mismatch for local genome file!\n"
+            f"Expected: '{EXPECTED_MD5}'\n"
+            f"Actual:   '{actual_md5}'\n"
+            f"-> The file at {file_path} might be corrupted or incomplete."
+        )
 
     seqs = []
 

@@ -135,4 +135,3 @@ docs/build
 *.mat
 
 *.idea
-/tests/scores/.test_data/ecoli_cds.fna.gz
