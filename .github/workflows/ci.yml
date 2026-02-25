@@ -33,4 +33,4 @@ jobs:
           pip install pytest pytest-regressions 
 
       - name: Run tests
-        run: pytest -vvvs
+        run: pytest -vvvs --durations=0
