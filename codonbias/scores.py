@@ -479,59 +479,110 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
 
         self.BCC_unif = self._calc_BCC(self._calc_BNC(''))
 
+        if self.k_mer == 1:
+            self._aa_deg = np.bincount(self.counter._aa_group, minlength=self.counter._n_aa)
+            self._bcc_uniform = 1.0 / self._aa_deg[self.counter._aa_group]
+
     def _calc_seq_weights(self, seq, background=None):
         return 1 / self._calc_F(seq, background=background)[0]['F']
 
     def _calc_score(self, seq, background=None):
-        F, P, N = self._calc_F(seq, background=background)
+        if self.k_mer == 1: return self._calc_score_single_kmer(seq, background)
 
+        F, P, N = self._calc_F(seq, background=background)
         F['deg'] = self.aa_deg
         F['N'] = N
         deg_count = F.groupby('deg').size().to_frame('deg_count')
 
         if self.mean == 'unweighted':
-            # at least 2 samples from AA to be included
             F = F.loc[(N > 1) & (F['F'] > 1e-6) & np.isfinite(F['F'])]\
                 .groupby('deg', group_keys=False).mean().join(deg_count, how='right')
         elif self.mean == 'weighted':
-            # weighted mean: Sun, Yang & Xia 2013
             F['F'] = F['F'] * F['N']
             F = F.groupby('deg')['F'].sum() / F.groupby('deg')['N'].sum()
             F = F.to_frame('F').join(deg_count, how='right')
         else:
             raise ValueError(f'unknown mean="{self.mean}"')
 
-        # missing AA cases
         miss_3 = np.isnan(F.loc[3, 'F'])
-        F['F'] = F['F'].fillna(1/F.index.to_series())  # use 1/deg
-        if miss_3:
-            F.loc[3, 'F'] = 0.5*(F.loc[2, 'F'] + F.loc[4, 'F'])
+        F['F'] = F['F'].fillna(1/F.index.to_series())
+        if miss_3: F.loc[3, 'F'] = 0.5*(F.loc[2, 'F'] + F.loc[4, 'F'])
 
         ENC = (F['deg_count'] / F['F']).sum()
         return min([len(P), ENC]) ** (1/self.k_mer)
 
-    def _calc_F(self, seq, background=None):
-        counts = self.counter.count(seq).get_aa_table()
-        counts += self.pseudocount  # Sun, Yang & Xia 2013
+    def _calc_score_single_kmer(self, seq, background=None):
+        F, P, N = self._calc_F_single_kmer(seq, background)
+        F_by_deg = {}
+        unique_degs, deg_counts = np.unique(self._aa_deg, return_counts=True)
 
+        for deg in unique_degs:
+            mask = (self._aa_deg == deg)
+            if self.mean == 'unweighted':
+                valid = mask & (N > 1) & (F > 1e-6) & np.isfinite(F)
+                F_by_deg[deg] = F[valid].mean() if valid.any() else np.nan
+            elif self.mean == 'weighted':
+                valid = mask & np.isfinite(F)
+                sum_N = N[valid].sum()
+                F_by_deg[deg] = (F[valid] * N[valid]).sum() / sum_N if sum_N > 0 else np.nan
+            else:
+                raise ValueError(f'unknown mean="{self.mean}"')
+
+        miss_3 = np.isnan(F_by_deg.get(3, 0))
+        for deg in unique_degs:
+            if np.isnan(F_by_deg[deg]): F_by_deg[deg] = 1.0 / deg
+        if miss_3:
+            F_by_deg[3] = 0.5 * (F_by_deg.get(2, 0.5) + F_by_deg.get(4, 0.25))
+
+        ENC = sum(count / F_by_deg[deg] for deg, count in zip(unique_degs, deg_counts))
+        return min(len(P), ENC)
+
+    def _calc_F(self, seq, background=None):
+        if self.k_mer == 1: return self._calc_F_single_kmer(seq, background)
+
+        counts = self.counter.count(seq).get_aa_table()
+        counts += self.pseudocount
         N = counts.groupby('aa').sum()
         P = counts / N
 
-        if background is None:
-            background = seq
-        if self.bg_correction:
-            BCC = self._calc_BCC(self._calc_BNC(background))
-        else:
-            BCC = self.BCC_unif
+        if background is None: background = seq
+        BCC = self._calc_BCC(self._calc_BNC(background)) if self.bg_correction else self.BCC_unif
 
         if not self.robust:
-            chi2 = N * ((P - BCC)**2 / BCC).groupby('aa').sum()  # Novembre 2002
+            chi2 = N * ((P - BCC)**2 / BCC).groupby('aa').sum()
             F = ((chi2 + N - self.aa_deg) / (N - 1) / self.aa_deg).to_frame('F')
-            # converges to Wright 1990 for BCC_unif
         else:
-            chi2 = ((P - BCC)**2 / BCC).groupby('aa').sum()  # modified Novembre 2002
+            chi2 = ((P - BCC)**2 / BCC).groupby('aa').sum()
             F = ((chi2 + 1) / self.aa_deg).to_frame('F')
-            # converges to Sun, Yang & Xia 2013 for BCC_unif, i.e., sum(p**2)
+        return F, P, N
+
+    def _calc_F_single_kmer(self, seq, background=None):
+        counts, _ = self.counter._count_single(seq)
+        counts = counts + self.pseudocount
+        aa_group = self.counter._aa_group
+
+        N = np.bincount(aa_group, weights=counts, minlength=self.counter._n_aa)
+
+        # Safely divide, leaving NaN where N is 0
+        with np.errstate(divide='ignore', invalid='ignore'):
+            P = counts / N[aa_group]
+
+        if background is None: background = seq
+        BCC = self._calc_BCC(self._calc_BNC(background)).values if self.bg_correction else self._bcc_uniform
+
+        # Safely compute chi2
+        with np.errstate(divide='ignore', invalid='ignore'):
+            chi2 = (P - BCC) ** 2 / BCC
+
+        # Pandas .sum() ignores NaNs by default. We mimic this by masking NaNs before bincount.
+        valid_chi2 = ~np.isnan(chi2)
+        chi2_aa = np.bincount(aa_group[valid_chi2], weights=chi2[valid_chi2], minlength=self.counter._n_aa)
+
+        if not self.robust:
+            with np.errstate(divide='ignore', invalid='ignore'):
+                F = (N * chi2_aa + N - self._aa_deg) / (N - 1) / self._aa_deg
+        else:
+            F = (chi2_aa + 1) / self._aa_deg
 
         return F, P, N
 

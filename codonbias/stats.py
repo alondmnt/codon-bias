@@ -7,6 +7,8 @@ import pandas as pd
 
 gc = pd.read_csv(f'{os.path.dirname(__file__)}/genetic_code_ncbi.csv',
                  index_col=0).sort_index()
+
+
 # https://en.wikipedia.org/wiki/List_of_genetic_codes
 
 
@@ -32,6 +34,7 @@ class CodonCounter(object):
     ignore_stop : bool, optional
         Whether STOP codons will be discarded from the analysis, by default True
     """
+
     def __init__(self, seqs=None, k_mer=1, sum_seqs=True, concat_index=True,
                  genetic_code=1, ignore_stop=True):
         self.k_mer = k_mer
@@ -39,8 +42,25 @@ class CodonCounter(object):
         self.sum_seqs = sum_seqs
         self.genetic_code = str(genetic_code)
         self.ignore_stop = ignore_stop
+
+        self._init_arrays()
+
         if seqs is not None:
             self.count(seqs)
+
+    def _init_arrays(self):
+        code = gc[[self.genetic_code]].reset_index().rename(columns={self.genetic_code: 'aa', 'index': 'codon'})
+        if self.ignore_stop: code = code.loc[code['aa'] != '*']
+
+        code = code.sort_values(['aa', 'codon'])
+
+        self._idx_to_codon = code['codon'].tolist()
+        self._codon_to_idx = {c: i for i, c in enumerate(self._idx_to_codon)}
+
+        unique_aa = code['aa'].unique()
+        self._n_aa = len(unique_aa)
+        self._aa_to_idx = {aa: i for i, aa in enumerate(unique_aa)}
+        self._aa_group = np.array([self._aa_to_idx[aa] for aa in code['aa']])
 
     def count(self, seqs):
         """
@@ -57,33 +77,42 @@ class CodonCounter(object):
         CodonCounter
             CodonCounter object (self) with updated counts
         """
-        self.counts = self._format_counts(self._count(seqs))
-        if self.counts.ndim == 1:
-            self.counts = self.counts.rename('count')
-
+        res = self._count(seqs)
+        # MINIMAL CHANGE: Wrap NumPy back to Pandas at the boundary for k_mer=1
+        if self.k_mer == 1:
+            self.counts = pd.Series(res, index=self._idx_to_codon, name='count') if res.ndim == 1 else pd.DataFrame(res,
+                                                                                                                    index=self._idx_to_codon)
+            self.counts.index.name = 'codon'
+        else:
+            self.counts = self._format_counts(res)
+            if self.counts.ndim == 1: self.counts = self.counts.rename('count')
         return self
 
     def _count(self, seqs):
         if isinstance(seqs, str):
-            return self._count_single(seqs)
-        elif isinstance(seqs, list) or isinstance(seqs, np.ndarray):
-            counts = pd.concat([self._count_single(s) for s in seqs], axis=1)
-        else:
-            raise ValueError(f'unknown sequence type: {type(seqs)}')
-
-        if self.sum_seqs:
-            return counts.sum(axis=1)
-        else:
-            return counts
+            res = self._count_single(seqs)
+            return res[0] if self.k_mer == 1 else res  # Return only count array for k_mer=1
+        elif isinstance(seqs, (list, np.ndarray)):
+            if self.k_mer == 1:
+                counts = np.column_stack([self._count_single(s)[0] for s in seqs])
+            else:
+                counts = pd.concat([self._count_single(s) for s in seqs], axis=1).fillna(0)
+            return counts.sum(axis=1) if self.sum_seqs else counts
+        raise ValueError(f'unknown sequence type: {type(seqs)}')
 
     def _count_single(self, seq):
-        if not isinstance(seq, str):
-            raise ValueError(f'sequence is not a string: {type(seq)}')
+        if not isinstance(seq, str): raise ValueError(f'sequence is not a string: {type(seq)}')
         seq = seq.upper().replace('U', 'T')
 
-        return pd.Series(Counter(
-            [seq[i:i + 3*self.k_mer]
-             for i in range(0, len(seq), 3)]), dtype=int)
+        if self.k_mer == 1:
+            counts = np.zeros(len(self._codon_to_idx), dtype=float)
+            for i in range(0, len(seq) - 2, 3):
+                idx = self._codon_to_idx.get(seq[i:i + 3])
+                if idx is not None: counts[idx] += 1
+            aa_counts = np.bincount(self._aa_group, weights=counts, minlength=self._n_aa)
+            return counts, aa_counts
+
+        return pd.Series(Counter([seq[i:i + 3 * self.k_mer] for i in range(0, len(seq), 3)]), dtype=int)
 
     def _format_counts(self, counts):
         counts.index.name = 'codon'
@@ -92,7 +121,7 @@ class CodonCounter(object):
             return counts
 
         counts.index = pd.MultiIndex.from_arrays([
-            counts.index.str[3*k:3*(k+1)]
+            counts.index.str[3 * k:3 * (k + 1)]
             for k in range(self.k_mer)],
             names=[f'codon{k}' for k in range(self.k_mer)])
 
@@ -123,7 +152,7 @@ class CodonCounter(object):
         if not hasattr(self, 'template_cod'):
             self.template_cod = self._init_table(keep_aa=False)
 
-        stats = self.template_cod.join(self.counts)\
+        stats = self.template_cod.join(self.counts) \
             .fillna(0).drop(columns=['dummy'])
 
         if nonzero:
@@ -171,7 +200,7 @@ class CodonCounter(object):
             self.template_aa = self._init_table(keep_aa=True)
 
         levels = self.template_aa.index.names
-        stats = self.template_aa.join(self.counts)\
+        stats = self.template_aa.join(self.counts) \
             .fillna(0).drop(columns=['dummy'])
 
         if nonzero:
@@ -206,7 +235,7 @@ class CodonCounter(object):
         pandas.DataFrame
             A dataframe with a `dummy` column
         """
-        code = gc[[self.genetic_code]].reset_index().assign(dummy=1)\
+        code = gc[[self.genetic_code]].reset_index().assign(dummy=1) \
             .rename(columns={self.genetic_code: 'aa'})
         if self.ignore_stop:
             code = code.loc[code['aa'] != '*']
@@ -223,9 +252,9 @@ class CodonCounter(object):
                             errors='ignore')
 
         for k in range(self.k_mer - 1):
-            stats = code.rename(columns={'codon': f'codon{k+1}',
-                                         'aa': f'aa{k+1}'},
-                                errors='ignore')\
+            stats = code.rename(columns={'codon': f'codon{k + 1}',
+                                         'aa': f'aa{k + 1}'},
+                                errors='ignore') \
                 .merge(stats, on='dummy', how='left')
 
         aa_levels = [f'aa{k}' for k in range(self.k_mer) if keep_aa]
@@ -285,6 +314,7 @@ class BaseCounter(object):
     >>> freq = nuc.count(seq).get_table(normed=True)
     >>> freq['CG']
     """
+
     def __init__(self, seqs=None, k_mer=1, step=1, frame=1, sum_seqs=True):
         self.k_mer = k_mer
         self.step = step
@@ -319,7 +349,7 @@ class BaseCounter(object):
         if isinstance(seqs, str):
             return self._count_single(seqs)
         elif isinstance(seqs, list) or isinstance(seqs, np.ndarray):
-            counts = pd.concat([self._count_single(s) for s in seqs], axis=1)\
+            counts = pd.concat([self._count_single(s) for s in seqs], axis=1) \
                 .fillna(0)
         else:
             raise ValueError(f'unknown sequence type: {type(seqs)}')
@@ -336,8 +366,8 @@ class BaseCounter(object):
 
         last_pos = len(seq) - self.k_mer + 1
         return pd.Series(Counter(
-            [seq[i:i+self.k_mer]
-             for i in range(self.frame-1, last_pos, self.step)]), dtype=int)
+            [seq[i:i + self.k_mer]
+             for i in range(self.frame - 1, last_pos, self.step)]), dtype=int)
 
     def get_table(self, normed=False, pseudocount=1):
         """
@@ -370,5 +400,5 @@ class BaseCounter(object):
             return stats
 
     def _init_table(self):
-        return [''.join(comb) 
-                for comb in list(product(*(self.k_mer*['ACGT'])))]
+        return [''.join(comb)
+                for comb in list(product(*(self.k_mer * ['ACGT'])))]
