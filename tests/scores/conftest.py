@@ -4,7 +4,12 @@ import os
 import gzip
 import hashlib
 
+import numpy as np
+
+from codonbias.scores import EffectiveNumberOfCodons
+
 EXPECTED_MD5 = "aaee0253df6f7d1df7df00e84d582fd4"
+
 
 def get_file_md5(file_path):
     """Calculates the MD5 sum of a file efficiently by reading in chunks."""
@@ -14,6 +19,7 @@ def get_file_md5(file_path):
         for chunk in iter(lambda: f.read(4096), b""):
             md5_hash.update(chunk)
     return md5_hash.hexdigest()
+
 
 @pytest.fixture(scope="session")
 def ecoli_seqs():
@@ -64,3 +70,25 @@ def ecoli_seqs():
                 seqs.append(joined_seq)
 
     return seqs
+
+
+@pytest.fixture
+def random_seq_gen():
+    """Factory fixture to generate random DNA sequences of a given length."""
+    rng = np.random.default_rng()
+
+    def _generate(length, seed=None, p=None):
+        nonlocal rng
+        if seed is not None:
+            rng = np.random.default_rng(seed)
+
+        bases = np.array(['A', 'C', 'G', 'T'])
+        return ''.join(rng.choice(bases, size=length, p=p))
+
+    return _generate
+
+
+@pytest.fixture
+def enc_default():
+    """Provides a default EffectiveNumberOfCodons instance."""
+    return EffectiveNumberOfCodons()
