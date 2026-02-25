@@ -1,5 +1,5 @@
-import numpy as np
 import pytest
+import numpy as np
 
 import os
 import gzip
@@ -72,12 +72,6 @@ def ecoli_seqs():
 
 
 @pytest.fixture
-def enc_default():
-    """Provides a default EffectiveNumberOfCodons instance."""
-    return EffectiveNumberOfCodons()
-
-
-@pytest.fixture
 def random_seq_gen():
     """Factory fixture to generate random DNA sequences of a given length."""
     rng = np.random.default_rng()
@@ -91,3 +85,9 @@ def random_seq_gen():
         return ''.join(rng.choice(bases, size=length, p=p))
 
     return _generate
+
+
+@pytest.fixture
+def enc_default():
+    """Provides a default EffectiveNumberOfCodons instance."""
+    return EffectiveNumberOfCodons()
