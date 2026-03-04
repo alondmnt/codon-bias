@@ -57,30 +57,6 @@ def test_enc_ecoli_regression(ecoli_seqs, dataframe_regression, k_mer, params):
     # Generates a reference CSV for THIS specific parameter combination
     dataframe_regression.check(df)
 
-
-
-@pytest.fixture
-def enc_default():
-    """Provides a default EffectiveNumberOfCodons instance."""
-    return EffectiveNumberOfCodons()
-
-
-@pytest.fixture
-def random_seq_gen():
-    """Factory fixture to generate random DNA sequences of a given length."""
-    rng = np.random.default_rng()
-
-    def _generate(length, seed=None, p=None):
-        nonlocal rng
-        if seed is not None:
-            rng = np.random.default_rng(seed)
-
-        bases = np.array(['A', 'C', 'G', 'T'])
-        return ''.join(rng.choice(bases, size=length, p=p))
-
-    return _generate
-
-
 def test_enc_basic_logic(enc_default):
     """Verifies fundamental scoring for standard, biased, and edge cases."""
     # Standard multi-codon sequence
@@ -151,26 +127,6 @@ def test_enc_dataframe_regression(enc_default, random_seq_gen, dataframe_regress
     })
 
     dataframe_regression.check(data)
-
-
-@pytest.mark.benchmark
-def test_enc_performance_bottleneck(enc_default, random_seq_gen, capsys):
-    """
-    Measures the massive speedup of the Cython byte-loop over Pandas.
-    Run with: pytest tests/test_scores.py -m benchmark -s
-    """
-    seq = random_seq_gen(10000)  # 10kb sequence
-    iterations = 500
-
-    # Benchmark Cython
-    t0 = time.perf_counter()
-    for _ in range(iterations):
-        enc_default.get_score(seq)
-    time_py = time.perf_counter() - t0
-
-    with capsys.disabled():
-        print(f"\n[BENCHMARK] {iterations} iterations on 10kb sequence")
-        print(f"  Time: {time_py:.4f}s")
 
 
 @pytest.mark.parametrize("pseudocount, result", [(0, 35.), (1, 44.063646)])
