@@ -7,49 +7,55 @@ from numpy.testing import assert_allclose
 
 from codonbias.scores import EffectiveNumberOfCodons
 
+# Define combinations outside the test function
+ECOLI_COMBINATIONS = [
+    {"bg_correction": False, "robust": True, "mean": "weighted"},
+    {"bg_correction": False, "robust": False, "mean": "unweighted"},
+    {"bg_correction": True, "robust": True, "mean": "weighted"},
+]
 
-def test_enc_ecoli_regression(ecoli_seqs, dataframe_regression):
+def format_param_id(p):
+    """Formats the dictionary into a clean, descriptive string for pytest."""
+    return f"bg_{p['bg_correction']}-rob_{p['robust']}-{p['mean']}"
+
+@pytest.mark.parametrize("k_mer", [1, 2], ids=["kmer1", "kmer2"])
+@pytest.mark.parametrize("params", ECOLI_COMBINATIONS, ids=format_param_id)
+def test_enc_ecoli_regression(ecoli_seqs, dataframe_regression, k_mer, params):
     """
-    Regression test comparing ENC scores on E. coli genes across multiple
+    Regression test comparing ENC scores and weights on E. coli genes across multiple
     parameter combinations using pytest-regressions.
     """
     results = []
 
-    # The distinct logic branches we want to ensure stay mathematically identical
-    combinations = [
-        {"bg_correction": False, "robust": True, "mean": "weighted"},
-        {"bg_correction": False, "robust": False, "mean": "unweighted"},
-        {"bg_correction": True, "robust": True, "mean": "weighted"},
-    ]
+    # Initialize with the specific parameters injected by pytest
+    enc = EffectiveNumberOfCodons(k_mer=k_mer, **params)
 
-    for params in combinations:
-        enc = EffectiveNumberOfCodons(**params)
+    # Calculate scores and weights for all sequences at once
+    scores = enc.get_score(ecoli_seqs)
+    weights = enc.get_weights(ecoli_seqs)
 
-        # Calculate scores for all sequences at once
-        scores = enc.get_score(ecoli_seqs)
+    # Format the results into a flat list of dictionaries for Pandas
+    for i, (score, weight_series) in enumerate(zip(scores, weights)):
+        row = {
+            "gene_index": i,
+            "score": score
+        }
 
-        # Format the results into a flat list of dictionaries for Pandas
-        for i, score in enumerate(scores):
-            results.append({
-                "bg_correction": params["bg_correction"],
-                "robust": params["robust"],
-                "mean": params["mean"],
-                "gene_index": i,
-                "score": score
-            })
+        # Add individual amino acid weights to the row
+        row.update({f"weight_{idx}": w for idx, w in enumerate(weight_series)})
+        results.append(row)
 
     df = pd.DataFrame(results)
 
-    # Round the scores to 6 decimal places to prevent floating-point micro-inconsistencies
-    # between CPU architectures or Pandas vs NumPy internal float handling
-    df["score"] = df["score"].round(6)
+    # Round the scores and weights to 6 decimal places to prevent floating-point micro-inconsistencies
+    cols_to_round = ["score"] + [col for col in df.columns if col.startswith("weight_")]
+    df[cols_to_round] = df[cols_to_round].round(6)
 
-    # Sort to guarantee the exact same row order on every machine
-    df = df.sort_values(by=["bg_correction", "robust", "mean", "gene_index"]).reset_index(drop=True)
+    # Sort to guarantee the exact same row order
+    df = df.sort_values(by=["gene_index"]).reset_index(drop=True)
 
-    # Generates a reference CSV on the first run, and asserts against it on future runs
+    # Generates a reference CSV for THIS specific parameter combination
     dataframe_regression.check(df)
-
 
 def test_enc_basic_logic(enc_default):
     """Verifies fundamental scoring for standard, biased, and edge cases."""
