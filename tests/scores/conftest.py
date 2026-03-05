@@ -1,10 +1,9 @@
 import pytest
+import numpy as np
 
 import os
 import gzip
 import hashlib
-
-import numpy as np
 
 from codonbias.scores import EffectiveNumberOfCodons
 
