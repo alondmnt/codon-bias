@@ -30,8 +30,9 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-regressions 
+          pip install pytest pytest-regressions pytest-xdist
           pip install -e .
 
       - name: Run tests
-        run: pytest -vvvs --durations=0
+        run: pytest -vvvs --durations=0 -n auto
+
