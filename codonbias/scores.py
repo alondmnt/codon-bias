@@ -491,7 +491,10 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
             self._bcc_uniform = 1.0 / self._aa_deg[self.counter._aa_group]
 
     def _calc_seq_weights(self, seq, background=None):
-        return 1 / self._calc_F(seq, background=background)[0]['F']
+        if self.k_mer == 1:
+            return 1 / self._calc_F(seq, background=background)[0]
+        else:
+            return 1 / self._calc_F(seq, background=background)[0]['F']
 
     def _calc_score(self, seq, background=None):
         if self.k_mer == 1: return self._calc_score_single_kmer(seq, background)
@@ -536,7 +539,7 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
             else:
                 raise ValueError(f'unknown mean="{self.mean}"')
 
-        miss_3 = np.isnan(F_by_deg.get(3, 0))
+        miss_3 = np.isnan(F_by_deg.get(3, np.nan))
         for deg in unique_degs:
             if np.isnan(F_by_deg[deg]): F_by_deg[deg] = 1.0 / deg
         if miss_3:
@@ -566,10 +569,16 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         else:
             chi2 = ((P - BCC) ** 2 / BCC).groupby('aa').sum()  # modified Novembre 2002
             F = ((chi2 + 1) / self.aa_deg).to_frame('F')
-            # converges to Sun, Yang & Xia for BBC_unif, i.e., sum(p**2)
+            # converges to Sun, Yang & Xia for BCC_unif, i.e., sum(p**2)
         return F, P, N
 
     def _calc_F_single_kmer(self, seq, background=None):
+        """
+        Returns a tuple of 3 np.arrays
+        F: 1D array of shape (n_aa,) representing codon homozygosity
+        P: 1D array of shape (n_codons,) representing relative frequency of each codon w.r.t its group
+        N: 1D array of shape (n_aa,) containing the total absolute counts of each AA observed in the sequence
+        """
         counts, _ = self.counter._count_single(seq)
         counts = counts + self.pseudocount
         aa_group = self.counter._aa_group
