@@ -92,10 +92,10 @@ class PairwiseScore(object):
         return self._calc_pair_score(self.weights[i], self.weights[j])
 
     def _calc_weights(self, seqs):
-        raise ("not implemented")
+        raise NotImplementedError("PairwiseScore._calc_weights not implemented")
 
     def _calc_pair_score(self, w1, w2):
-        raise ("not implemented")
+        raise NotImplementedError("PairwiseScore._calc_pair_score not implemented")
 
 
 class CodonUsageFrequency(PairwiseScore):
