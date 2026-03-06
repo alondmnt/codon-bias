@@ -1,9 +1,8 @@
+import warnings
 from itertools import starmap
 from multiprocessing.pool import Pool
-import warnings
 
 import numpy as np
-import pandas as pd
 from scipy.spatial.distance import squareform
 
 from .stats import CodonCounter
@@ -33,12 +32,13 @@ class PairwiseScore(object):
         provided then the number returned by os.cpu_count() is used, by
         default None
     """
+
     def __init__(self, n_jobs=None):
         self.n_jobs = n_jobs
 
     def get_score(self, seq1, seq2):
         """
-        Computes the score between the two given sequences. 
+        Computes the score between the two given sequences.
 
         Parameters
         ----------
@@ -52,8 +52,7 @@ class PairwiseScore(object):
         float
             Score for `seq1` and `seq2`.
         """
-        return self._calc_pair_score(
-            self._calc_weights(seq1), self._calc_weights(seq2))
+        return self._calc_pair_score(self._calc_weights(seq1), self._calc_weights(seq2))
 
     def get_matrix(self, seqs, elementwise=False):
         """
@@ -75,7 +74,7 @@ class PairwiseScore(object):
         """
         self.weights = self._calc_weights(seqs)
 
-        if not elementwise and hasattr(self, '_calc_matrix'):
+        if not elementwise and hasattr(self, "_calc_matrix"):
             return self._calc_matrix(self.weights)
 
         # the following uses self._calc_pair_score(), assuming that
@@ -89,21 +88,21 @@ class PairwiseScore(object):
         return squareform(sf)
 
     def _calc_matrix_element(self, i, j):
-        """ Fallback function for when self._calc_matrix() is missing. """
+        """Fallback function for when self._calc_matrix() is missing."""
         return self._calc_pair_score(self.weights[i], self.weights[j])
 
     def _calc_weights(self, seqs):
-        raise('not implemented')
+        raise NotImplementedError("PairwiseScore._calc_weights not implemented")
 
     def _calc_pair_score(self, w1, w2):
-        raise('not implemented')
+        raise NotImplementedError("PairwiseScore._calc_pair_score not implemented")
 
 
 class CodonUsageFrequency(PairwiseScore):
     """
     Codon Usage Frequency (CUFS) (Diament, Pinter & Tuller, Nature
     Communications, 2014).
-  
+
     This is a distance metric between pairs of sequences based on their
     distribution of codons. It employs a distance metric for probability
     distributions (Endres & Schindelin, 2003) that is based on KL
@@ -131,14 +130,25 @@ class CodonUsageFrequency(PairwiseScore):
         provided then the number returned by os.cpu_count() is used, by
         default None
     """
-    def __init__(self, synonymous=False, k_mer=1, genetic_code=1,
-                 ignore_stop=False, pseudocount=1, n_jobs=None):
+
+    def __init__(
+        self,
+        synonymous=False,
+        k_mer=1,
+        genetic_code=1,
+        ignore_stop=False,
+        pseudocount=1,
+        n_jobs=None,
+    ):
         super().__init__(n_jobs=n_jobs)
         self.synonymous = synonymous
-        self.counter = CodonCounter(sum_seqs=False,
-                                    k_mer=k_mer, concat_index=True,
-                                    genetic_code=genetic_code,
-                                    ignore_stop=ignore_stop)
+        self.counter = CodonCounter(
+            sum_seqs=False,
+            k_mer=k_mer,
+            concat_index=True,
+            genetic_code=genetic_code,
+            ignore_stop=ignore_stop,
+        )
         self.pseudocount = pseudocount
 
     def _calc_weights(self, seqs):
@@ -148,16 +158,15 @@ class CodonUsageFrequency(PairwiseScore):
 
         if not self.synonymous:
             return counts.get_codon_table(
-                normed=True, pseudocount=self.pseudocount)\
-                .T.values.astype(np.float32)
+                normed=True, pseudocount=self.pseudocount
+            ).T.values.astype(np.float32)
 
-        weights = counts.get_aa_table(
-            normed=True, pseudocount=self.pseudocount)
+        weights = counts.get_aa_table(normed=True, pseudocount=self.pseudocount)
 
         return weights.T.values.astype(np.float32)
 
     def _calc_pair_score(self, w1, w2):
-        M = 0.5*(w1 + w2)
+        M = 0.5 * (w1 + w2)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             return np.sqrt(self._kld(w1, M) + self._kld(w2, M))
@@ -166,7 +175,7 @@ class CodonUsageFrequency(PairwiseScore):
         return np.nansum(np.log(p / q) * p, axis=0)
 
     def _calc_matrix(self, weights):
-        w1 = weights.T[:,:,None]
-        w2 = weights.T[:,None,:]
+        w1 = weights.T[:, :, None]
+        w2 = weights.T[:, None, :]
 
         return self._calc_pair_score(w1, w2)
