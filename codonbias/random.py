@@ -56,12 +56,15 @@ class Permuter(object):
     def __init__(
         self,
         property_func=translate,
-        add_properties=[],
+        add_properties=None,
         n_samples=100,
         random_state=42,
         n_jobs=None,
         **kwargs,
     ):
+        if add_properties is None:
+            add_properties = []
+
         self.property_func = property_func
         self.property_args = kwargs
         self.add_properties = add_properties
@@ -100,7 +103,7 @@ class Permuter(object):
         )
 
     def get_zscore(
-        self, vector, seqs, slice=None, mapfunc=None, aggfunc=None, model_kws={}
+        self, vector, seqs, slice=None, mapfunc=None, aggfunc=None, model_kws=None
     ):
         """
         Compute the z-score for each position in the vector using random
@@ -135,6 +138,9 @@ class Permuter(object):
             Z-scores series with an entry for each input sequence that
             contains its z-scores array.
         """
+        if model_kws is None:
+            model_kws = {}
+
         if slice is not None:
             seqs = [s[slice] for s in seqs]
 
