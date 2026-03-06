@@ -170,7 +170,7 @@ class Permuter(object):
         slice=None,
         mapfunc=None,
         aggfunc=None,
-        model_kws={},
+        model_kws=None,
     ):
         """
         Compute the p-value for each position in the vector using random
@@ -205,6 +205,8 @@ class Permuter(object):
             Z-scores series with an entry for each input sequence that
             contains its p-values array.
         """
+        if model_kws is None:
+            model_kws = {}
         if slice is not None:
             seqs = [s[slice] for s in seqs]
 
@@ -354,7 +356,7 @@ class Permuter(object):
         alternative="greater",
         mapfunc=None,
         aggfunc=None,
-        model_kws={},
+        model_kws=None,
     ):
         """
         This function does not make any assumptions on the computation of
@@ -368,6 +370,8 @@ class Permuter(object):
         ---------
         self._permute_vector
         """
+        if model_kws is None:
+            model_kws = {}
         alt_values = {"greater", "less"}
         if alternative not in alt_values:
             raise ValueError(
