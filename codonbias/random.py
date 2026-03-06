@@ -296,9 +296,9 @@ class Permuter(object):
         """
         Returns a DataFrame with `n` permutations of the column `col`.
         """
-        np.random.seed(self.random_state)
+        rng = np.random.deafult_rng(self.random_state)
         for i in range(n):
-            df[f"null_{i}"] = np.random.permutation(df[col])
+            df[f"null_{i}"] = rng.permutation(df[col])
         return df
 
     def _permute_vector(self, vector, seqs, return_pval=False, alternative="greater"):
