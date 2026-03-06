@@ -1,8 +1,8 @@
-import pytest
+import time
 
 import numpy as np
 import pandas as pd
-import time
+import pytest
 from numpy.testing import assert_allclose
 
 from codonbias.scores import EffectiveNumberOfCodons
@@ -14,9 +14,11 @@ ECOLI_COMBINATIONS = [
     {"bg_correction": True, "robust": True, "mean": "weighted"},
 ]
 
+
 def format_param_id(p):
     """Formats the dictionary into a clean, descriptive string for pytest."""
     return f"bg_{p['bg_correction']}-rob_{p['robust']}-{p['mean']}"
+
 
 @pytest.mark.parametrize("k_mer", [1, 2], ids=["kmer1", "kmer2"])
 @pytest.mark.parametrize("params", ECOLI_COMBINATIONS, ids=format_param_id)
@@ -36,10 +38,7 @@ def test_enc_ecoli_regression(ecoli_seqs, dataframe_regression, k_mer, params):
 
     # Format the results into a flat list of dictionaries for Pandas
     for i, (score, weight_series) in enumerate(zip(scores, weights)):
-        row = {
-            "gene_index": i,
-            "score": score
-        }
+        row = {"gene_index": i, "score": score}
 
         # Add individual amino acid weights to the row
         row.update({f"weight_{idx}": w for idx, w in enumerate(weight_series)})
@@ -56,6 +55,7 @@ def test_enc_ecoli_regression(ecoli_seqs, dataframe_regression, k_mer, params):
 
     # Generates a reference CSV for THIS specific parameter combination
     dataframe_regression.check(df)
+
 
 def test_enc_basic_logic(enc_default):
     """Verifies fundamental scoring for standard, biased, and edge cases."""
@@ -121,15 +121,12 @@ def test_enc_dataframe_regression(enc_default, random_seq_gen, dataframe_regress
         score = enc_default.get_score(seq)
         all_scores.append(score)
 
-    data = pd.DataFrame({
-        "iteration": np.arange(1000),
-        "enc_score": all_scores
-    })
+    data = pd.DataFrame({"iteration": np.arange(1000), "enc_score": all_scores})
 
     dataframe_regression.check(data)
 
 
-@pytest.mark.parametrize("pseudocount, result", [(0, 35.), (1, 44.063646)])
+@pytest.mark.parametrize("pseudocount, result", [(0, 35.0), (1, 44.063646)])
 def test_enc_missing_3fold_deg(pseudocount, result):
     """
     Regression test for the 'degree 3 imputation'

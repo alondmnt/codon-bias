@@ -1,0 +1,21 @@
+line-length = 88
+target-version = "py311"
+
+[lint]
+select = [
+    "W",
+    "F",
+    "I",
+    "B",
+]
+
+ignore = [
+    "E501",
+]
+
+[lint.isort]
+known-first-party = ["codonbias"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
