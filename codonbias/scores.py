@@ -239,7 +239,7 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         elif weights is not None:
             # Ensure that weights have the same index as the counter
             try:
-                if type(weights) == pd.Series:
+                if isinstance(weights, pd.Series):
                     weights = weights.to_frame("weights")
                 if "aa" not in weights.index.names:
                     self.weights = weights.join(self.weights.rename("dummy")).drop(

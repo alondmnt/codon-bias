@@ -165,9 +165,9 @@ def process_GtRNAdb_table(table):
     pandas.DataFrame
         tRNA gene copy numbers with the columns: `anti_codon`, `GCN`.
     """
-    df = table.loc[:, table.dtypes == object].apply(
-        lambda col: col.str.split(" ").str[-2:]
-    )
+    df = table.loc[
+        :, table.dtypes == object  # noqa: E721
+    ].apply(lambda col: col.str.split(" ").str[-2:])
     # flatten
     df = pd.DataFrame(
         {"pair": df.values[df.apply(lambda col: col.str.len()).values == 2]}
