@@ -246,10 +246,10 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
                         columns=["dummy"]
                     )
                 self.weights = self.weights.iloc[:, 0]
-            except KeyError:
+            except KeyError as err:
                 raise ValueError(
                     "ensure that weights is properly formatted, with index levels [codon] or [aa, codon]"
-                )
+                ) from err
         else:
             raise ValueError("either ref_seq or weights must be provided")
 
