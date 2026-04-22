@@ -1,9 +1,9 @@
-import pytest
-import numpy as np
-
-import os
 import gzip
 import hashlib
+import os
+
+import numpy as np
+import pytest
 
 from codonbias.scores import EffectiveNumberOfCodons
 
@@ -81,8 +81,8 @@ def random_seq_gen():
         if seed is not None:
             rng = np.random.default_rng(seed)
 
-        bases = np.array(['A', 'C', 'G', 'T'])
-        return ''.join(rng.choice(bases, size=length, p=p))
+        bases = np.array(["A", "C", "G", "T"])
+        return "".join(rng.choice(bases, size=length, p=p))
 
     return _generate
 

@@ -1,11 +1,11 @@
-from itertools import product
 import os
+from itertools import product
 
 import numpy as np
 import pandas as pd
-from scipy import stats, optimize
+from scipy import optimize, stats
 
-from .stats import CodonCounter, BaseCounter
+from .stats import BaseCounter, CodonCounter
 from .utils import fetch_GCN_from_GtRNAdb, geomean, mean, reverse_complement
 
 
@@ -51,7 +51,7 @@ class ScalarScore(object):
         elif isinstance(seq, list) or isinstance(seq, np.ndarray):
             return np.array([self.get_score(s, slice=slice, **kwargs) for s in seq])
         else:
-            raise ValueError(f'unknown sequence type: {type(seq)}')
+            raise ValueError(f"unknown sequence type: {type(seq)}")
 
         if slice is not None:
             return self._calc_score(seq[slice], **kwargs)
@@ -59,7 +59,7 @@ class ScalarScore(object):
             return self._calc_score(seq, **kwargs)
 
     def _calc_score(self, seq):
-        raise Exception('not implemented')
+        raise Exception("not implemented")
 
 
 class VectorScore(object):
@@ -105,24 +105,31 @@ class VectorScore(object):
         elif isinstance(seq, list) or isinstance(seq, np.ndarray):
             pass
         else:
-            raise ValueError(f'unknown sequence type: {type(seq)}')
+            raise ValueError(f"unknown sequence type: {type(seq)}")
 
-        dtype = object if slice is None \
-                          and np.unique([len(s) for s in seq]).size > 1 and not pad else None
+        dtype = (
+            object
+            if slice is None and np.unique([len(s) for s in seq]).size > 1 and not pad
+            else None
+        )
         vecs = [self.get_vector(s, slice=slice, **kwargs) for s in seq]
 
         if pad:
             max_len = max([len(v) for v in vecs])
-            vecs = [np.pad(v, (0, max_len - len(v)),
-                           mode='constant', constant_values=np.nan) for v in vecs]
+            vecs = [
+                np.pad(
+                    v, (0, max_len - len(v)), mode="constant", constant_values=np.nan
+                )
+                for v in vecs
+            ]
 
         return np.array(vecs, dtype=dtype)
 
     def _calc_vector(self, seq):
-        raise Exception('not implemented')
+        raise Exception("not implemented")
 
     def _get_codon_vector(self, seq, k_mer=1):
-        return [seq[i:i + 3 * k_mer] for i in range(0, len(seq), 3)]
+        return [seq[i : i + 3 * k_mer] for i in range(0, len(seq), 3)]
 
 
 class WeightScore(object):
@@ -160,7 +167,7 @@ class WeightScore(object):
         elif isinstance(seq, list) or isinstance(seq, np.ndarray):
             return np.array([self.get_weights(s, slice=slice, **kwargs) for s in seq])
         else:
-            raise ValueError(f'unknown sequence type: {type(seq)}')
+            raise ValueError(f"unknown sequence type: {type(seq)}")
 
         if slice is not None:
             return self._calc_seq_weights(seq[slice], **kwargs)
@@ -168,7 +175,7 @@ class WeightScore(object):
             return self._calc_seq_weights(seq, **kwargs)
 
     def _calc_seq_weights(self, seq):
-        raise Exception('not implemented')
+        raise Exception("not implemented")
 
 
 class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
@@ -212,37 +219,46 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         effective when `ref_seq` contains few short sequences. by default 1
     """
 
-    def __init__(self, ref_seq='', weights=None, thresh=0.8, genetic_code=1,
-                 ignore_stop=True, pseudocount=1):
+    def __init__(
+        self,
+        ref_seq="",
+        weights=None,
+        thresh=0.8,
+        genetic_code=1,
+        ignore_stop=True,
+        pseudocount=1,
+    ):
         self.thresh = thresh
-        self.counter = CodonCounter(genetic_code=genetic_code,
-                                    ignore_stop=ignore_stop)
+        self.counter = CodonCounter(genetic_code=genetic_code, ignore_stop=ignore_stop)
         self.pseudocount = pseudocount
-        self.weights = self.counter.count(ref_seq) \
-            .get_aa_table(normed=True, pseudocount=pseudocount)
+        self.weights = self.counter.count(ref_seq).get_aa_table(
+            normed=True, pseudocount=pseudocount
+        )
         if ref_seq is not None and len(ref_seq) > 0:
             pass
         elif weights is not None:
             # Ensure that weights have the same index as the counter
             try:
-                if type(weights) == pd.Series:
-                    weights = weights.to_frame('weights')
-                if 'aa' not in weights.index.names:
-                    self.weights = weights.join(
-                        self.weights.rename('dummy')) \
-                        .drop(columns=['dummy'])
+                if isinstance(weights, pd.Series):
+                    weights = weights.to_frame("weights")
+                if "aa" not in weights.index.names:
+                    self.weights = weights.join(self.weights.rename("dummy")).drop(
+                        columns=["dummy"]
+                    )
                 self.weights = self.weights.iloc[:, 0]
-            except KeyError:
-                raise ValueError('ensure that weights is properly formatted, with index levels [codon] or [aa, codon]')
+            except KeyError as err:
+                raise ValueError(
+                    "ensure that weights is properly formatted, with index levels [codon] or [aa, codon]"
+                ) from err
         else:
-            raise ValueError('either ref_seq or weights must be provided')
+            raise ValueError("either ref_seq or weights must be provided")
 
-        self.weights = self.weights \
-            .groupby('aa', group_keys=False) \
-            .apply(lambda x: x / x.max())
+        self.weights = self.weights.groupby("aa", group_keys=False).apply(
+            lambda x: x / x.max()
+        )
         self.weights[self.weights >= self.thresh] = 1  # optimal
         self.weights[self.weights < self.thresh] = 0  # non-optimal
-        self.weights = self.weights.droplevel('aa')
+        self.weights = self.weights.droplevel("aa")
 
     def _calc_score(self, seq):
         counts = self.counter.count(seq).counts
@@ -299,46 +315,60 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore, WeightScore):
     codonbias.scores.EffectiveNumberOfCodons
     """
 
-    def __init__(self, ref_seq=None, directional=False, mean='geometric',
-                 genetic_code=1, ignore_stop=True, pseudocount=1):
+    def __init__(
+        self,
+        ref_seq=None,
+        directional=False,
+        mean="geometric",
+        genetic_code=1,
+        ignore_stop=True,
+        pseudocount=1,
+    ):
         self.directional = directional
         self.mean = mean
-        self.counter = CodonCounter(sum_seqs=False, genetic_code=genetic_code,
-                                    ignore_stop=ignore_stop)
+        self.counter = CodonCounter(
+            sum_seqs=False, genetic_code=genetic_code, ignore_stop=ignore_stop
+        )
         self.pseudocount = pseudocount
 
         if ref_seq is None:
-            self.reference = CodonCounter('', genetic_code=genetic_code,
-                                          ignore_stop=ignore_stop)
+            self.reference = CodonCounter(
+                "", genetic_code=genetic_code, ignore_stop=ignore_stop
+            )
         else:
-            self.reference = CodonCounter(ref_seq, genetic_code=genetic_code,
-                                          ignore_stop=ignore_stop)
+            self.reference = CodonCounter(
+                ref_seq, genetic_code=genetic_code, ignore_stop=ignore_stop
+            )
         self.reference = self.reference.get_aa_table(
-            normed=True, pseudocount=pseudocount)
+            normed=True, pseudocount=pseudocount
+        )
 
     def _calc_score(self, seq):
-        D = self._calc_seq_weights(seq).droplevel('aa')
-        counts = self.counter.counts  # counts have already been prepared in _calc_weights
+        D = self._calc_seq_weights(seq).droplevel("aa")
+        counts = (
+            self.counter.counts
+        )  # counts have already been prepared in _calc_weights
 
-        if self.mean == 'geometric':
+        if self.mean == "geometric":
             return geomean(np.log(D), counts) - 1
-        elif self.mean == 'arithmetic':
+        elif self.mean == "arithmetic":
             return mean(D, counts)
         else:
-            raise ValueError(f'unknown mean: {self.mean}')
+            raise ValueError(f"unknown mean: {self.mean}")
 
     def _calc_vector(self, seq):
-        weights = self._calc_seq_weights(seq).droplevel('aa')
+        weights = self._calc_seq_weights(seq).droplevel("aa")
         return weights.reindex(self._get_codon_vector(seq)).values
 
     def _calc_seq_weights(self, seq):
-        P = self.counter.count(seq) \
-            .get_aa_table(normed=True, pseudocount=self.pseudocount)
+        P = self.counter.count(seq).get_aa_table(
+            normed=True, pseudocount=self.pseudocount
+        )
         # codon weights
         if self.directional:
             D = np.maximum(
-                P.divide(self.reference, axis=0),
-                self.reference.divide(P, axis=0))
+                P.divide(self.reference, axis=0), self.reference.divide(P, axis=0)
+            )
         else:
             D = P.divide(self.reference, axis=0)
 
@@ -380,11 +410,15 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         effective when `ref_seq` contains few short sequences. by default 1
     """
 
-    def __init__(self, ref_seq, k_mer=1, genetic_code=1,
-                 ignore_stop=True, pseudocount=1):
-        self.counter = CodonCounter(k_mer=k_mer, concat_index=True,
-                                    genetic_code=genetic_code,
-                                    ignore_stop=ignore_stop)
+    def __init__(
+        self, ref_seq, k_mer=1, genetic_code=1, ignore_stop=True, pseudocount=1
+    ):
+        self.counter = CodonCounter(
+            k_mer=k_mer,
+            concat_index=True,
+            genetic_code=genetic_code,
+            ignore_stop=ignore_stop,
+        )
         self.k_mer = k_mer
         self.pseudocount = pseudocount
 
@@ -397,15 +431,20 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
 
     def _calc_vector(self, seq):
         return self.weights.reindex(
-            self._get_codon_vector(seq, k_mer=self.k_mer)).values
+            self._get_codon_vector(seq, k_mer=self.k_mer)
+        ).values
 
     def _calc_weights(self, seqs):
-        self.weights = self.counter.count(seqs) \
-            .get_aa_table(normed=True, pseudocount=self.pseudocount)
+        self.weights = self.counter.count(seqs).get_aa_table(
+            normed=True, pseudocount=self.pseudocount
+        )
 
-        aa_levels = [n for n in self.weights.index.names if 'aa' in n]
-        self.weights = self.weights.groupby(aa_levels, group_keys=False) \
-            .apply(lambda x: x / x.max()).droplevel(aa_levels)
+        aa_levels = [n for n in self.weights.index.names if "aa" in n]
+        self.weights = (
+            self.weights.groupby(aa_levels, group_keys=False)
+            .apply(lambda x: x / x.max())
+            .droplevel(aa_levels)
+        )
 
         self.log_weights = np.log(self.weights)
 
@@ -470,56 +509,70 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
     codonbias.scores.RelativeCodonBiasScore
     """
 
-    def __init__(self, k_mer=1, bg_correction=False, robust=True,
-                 pseudocount=1, mean='weighted', genetic_code=1):
+    def __init__(
+        self,
+        k_mer=1,
+        bg_correction=False,
+        robust=True,
+        pseudocount=1,
+        mean="weighted",
+        genetic_code=1,
+    ):
         self.k_mer = k_mer
         self.bg_correction = bg_correction
         self.robust = robust
         self.pseudocount = pseudocount
         self.mean = mean
         self.counter = CodonCounter(
-            k_mer=k_mer, concat_index=True,
-            genetic_code=genetic_code, ignore_stop=True)  # score is not defined for STOP codons
+            k_mer=k_mer, concat_index=True, genetic_code=genetic_code, ignore_stop=True
+        )  # score is not defined for STOP codons
 
-        self.template = self.counter.count('').get_aa_table().to_frame()
-        self.aa_deg = self.template.groupby('aa').size()
+        self.template = self.counter.count("").get_aa_table().to_frame()
+        self.aa_deg = self.template.groupby("aa").size()
 
-        self.BCC_unif = self._calc_BCC(self._calc_BNC(''))
+        self.BCC_unif = self._calc_BCC(self._calc_BNC(""))
 
         if self.k_mer == 1:
-            self._aa_deg = np.bincount(self.counter._aa_group, minlength=self.counter._n_aa)
+            self._aa_deg = np.bincount(
+                self.counter._aa_group, minlength=self.counter._n_aa
+            )
             self._bcc_uniform = 1.0 / self._aa_deg[self.counter._aa_group]
 
     def _calc_seq_weights(self, seq, background=None):
         if self.k_mer == 1:
             return 1 / self._calc_F(seq, background=background)[0]
         else:
-            return 1 / self._calc_F(seq, background=background)[0]['F']
+            return 1 / self._calc_F(seq, background=background)[0]["F"]
 
     def _calc_score(self, seq, background=None):
-        if self.k_mer == 1: return self._calc_score_single_kmer(seq, background)
+        if self.k_mer == 1:
+            return self._calc_score_single_kmer(seq, background)
 
         F, P, N = self._calc_F(seq, background=background)
-        F['deg'] = self.aa_deg
-        F['N'] = N
-        deg_count = F.groupby('deg').size().to_frame('deg_count')
+        F["deg"] = self.aa_deg
+        F["N"] = N
+        deg_count = F.groupby("deg").size().to_frame("deg_count")
 
-        if self.mean == 'unweighted':
-            F = F.loc[(N > 1) & (F['F'] > 1e-6) & np.isfinite(F['F'])] \
-                .groupby('deg', group_keys=False).mean().join(deg_count, how='right')
-        elif self.mean == 'weighted':
-            F['F'] = F['F'] * F['N']
-            F = F.groupby('deg')['F'].sum() / F.groupby('deg')['N'].sum()
-            F = F.to_frame('F').join(deg_count, how='right')
+        if self.mean == "unweighted":
+            F = (
+                F.loc[(N > 1) & (F["F"] > 1e-6) & np.isfinite(F["F"])]
+                .groupby("deg", group_keys=False)
+                .mean()
+                .join(deg_count, how="right")
+            )
+        elif self.mean == "weighted":
+            F["F"] = F["F"] * F["N"]
+            F = F.groupby("deg")["F"].sum() / F.groupby("deg")["N"].sum()
+            F = F.to_frame("F").join(deg_count, how="right")
         else:
             raise ValueError(f'unknown mean="{self.mean}"')
 
-        miss_3 = np.isnan(F.loc[3, 'F'])
-        F['F'] = F['F'].fillna(1 / F.index.to_series())  # use 1/deg
+        miss_3 = np.isnan(F.loc[3, "F"])
+        F["F"] = F["F"].fillna(1 / F.index.to_series())  # use 1/deg
         if miss_3:
-            F.loc[3, 'F'] = 0.5 * (F.loc[2, 'F'] + F.loc[4, 'F'])
+            F.loc[3, "F"] = 0.5 * (F.loc[2, "F"] + F.loc[4, "F"])
 
-        ENC = (F['deg_count'] / F['F']).sum()
+        ENC = (F["deg_count"] / F["F"]).sum()
         return min([len(P), ENC]) ** (1 / self.k_mer)
 
     def _calc_score_single_kmer(self, seq, background=None):
@@ -528,20 +581,23 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         unique_degs, deg_counts = np.unique(self._aa_deg, return_counts=True)
 
         for deg in unique_degs:
-            mask = (self._aa_deg == deg)
-            if self.mean == 'unweighted':
+            mask = self._aa_deg == deg
+            if self.mean == "unweighted":
                 valid = mask & (N > 1) & (F > 1e-6) & np.isfinite(F)
                 F_by_deg[deg] = F[valid].mean() if valid.any() else np.nan
-            elif self.mean == 'weighted':
+            elif self.mean == "weighted":
                 valid = mask & np.isfinite(F)
                 sum_N = N[valid].sum()
-                F_by_deg[deg] = (F[valid] * N[valid]).sum() / sum_N if sum_N > 0 else np.nan
+                F_by_deg[deg] = (
+                    (F[valid] * N[valid]).sum() / sum_N if sum_N > 0 else np.nan
+                )
             else:
                 raise ValueError(f'unknown mean="{self.mean}"')
 
         miss_3 = np.isnan(F_by_deg.get(3, np.nan))
         for deg in unique_degs:
-            if np.isnan(F_by_deg[deg]): F_by_deg[deg] = 1.0 / deg
+            if np.isnan(F_by_deg[deg]):
+                F_by_deg[deg] = 1.0 / deg
         if miss_3:
             F_by_deg[3] = 0.5 * (F_by_deg.get(2, 0.5) + F_by_deg.get(4, 0.25))
 
@@ -549,11 +605,12 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         return min(len(P), ENC)
 
     def _calc_F(self, seq, background=None):
-        if self.k_mer == 1: return self._calc_F_single_kmer(seq, background)
+        if self.k_mer == 1:
+            return self._calc_F_single_kmer(seq, background)
 
         counts = self.counter.count(seq).get_aa_table()
-        counts += self.pseudocount # Sun, Yang & Xia 2013
-        N = counts.groupby('aa').sum()
+        counts += self.pseudocount  # Sun, Yang & Xia 2013
+        N = counts.groupby("aa").sum()
         P = counts / N
 
         if background is None:
@@ -564,11 +621,11 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
             BCC = self.BCC_unif
 
         if not self.robust:
-            chi2 = N * ((P - BCC) ** 2 / BCC).groupby('aa').sum()  # Novembre 2002
-            F = ((chi2 + N - self.aa_deg) / (N - 1) / self.aa_deg).to_frame('F')
+            chi2 = N * ((P - BCC) ** 2 / BCC).groupby("aa").sum()  # Novembre 2002
+            F = ((chi2 + N - self.aa_deg) / (N - 1) / self.aa_deg).to_frame("F")
         else:
-            chi2 = ((P - BCC) ** 2 / BCC).groupby('aa').sum()  # modified Novembre 2002
-            F = ((chi2 + 1) / self.aa_deg).to_frame('F')
+            chi2 = ((P - BCC) ** 2 / BCC).groupby("aa").sum()  # modified Novembre 2002
+            F = ((chi2 + 1) / self.aa_deg).to_frame("F")
             # converges to Sun, Yang & Xia for BCC_unif, i.e., sum(p**2)
         return F, P, N
 
@@ -586,22 +643,29 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         N = np.bincount(aa_group, weights=counts, minlength=self.counter._n_aa)
 
         # Safely divide, leaving NaN where N is 0
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             P = counts / N[aa_group]
 
-        if background is None: background = seq
-        BCC = self._calc_BCC(self._calc_BNC(background)).values if self.bg_correction else self._bcc_uniform
+        if background is None:
+            background = seq
+        BCC = (
+            self._calc_BCC(self._calc_BNC(background)).values
+            if self.bg_correction
+            else self._bcc_uniform
+        )
 
         # Safely compute chi2
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             chi2 = (P - BCC) ** 2 / BCC
 
         # Pandas .sum() ignores NaNs by default. We mimic this by masking NaNs before bincount.
         valid_chi2 = ~np.isnan(chi2)
-        chi2_aa = np.bincount(aa_group[valid_chi2], weights=chi2[valid_chi2], minlength=self.counter._n_aa)
+        chi2_aa = np.bincount(
+            aa_group[valid_chi2], weights=chi2[valid_chi2], minlength=self.counter._n_aa
+        )
 
         if not self.robust:
-            with np.errstate(divide='ignore', invalid='ignore'):
+            with np.errstate(divide="ignore", invalid="ignore"):
                 F = (N * chi2_aa + N - self._aa_deg) / (N - 1) / self._aa_deg
         else:
             F = (chi2_aa + 1) / self._aa_deg
@@ -609,18 +673,20 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         return F, P, N
 
     def _calc_BNC(self, seq):
-        """ Compute the background NUCLEOTIDE composition of the sequence. """
+        """Compute the background NUCLEOTIDE composition of the sequence."""
         BNC = BaseCounter(seq).get_table(normed=True)
 
         return BNC
 
     def _calc_BCC(self, BNC):
-        """ Compute the background CODON composition of the sequence. """
+        """Compute the background CODON composition of the sequence."""
         BCC = self.template.copy()
-        BCC['bcc'] = [np.prod([BNC[c] for c in cod])
-                      for cod in BCC.index.get_level_values('codon')]
-        BCC = BCC['bcc']
-        BCC /= BCC.groupby('aa').sum()
+        BCC["bcc"] = [
+            np.prod([BNC[c] for c in cod])
+            for cod in BCC.index.get_level_values("codon")
+        ]
+        BCC = BCC["bcc"]
+        BCC /= BCC.groupby("aa").sum()
 
         return BCC
 
@@ -677,17 +743,28 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
     codonbias.scores.NormalizedTranslationalEfficiency
     """
 
-    def __init__(self, tGCN=None, url=None, genome_id=None, domain=None,
-                 prokaryote=False, s_values='dosReis', genetic_code=1):
-        self.counter = CodonCounter(genetic_code=genetic_code,
-                                    ignore_stop=True)  # score is not defined for STOP codons
+    def __init__(
+        self,
+        tGCN=None,
+        url=None,
+        genome_id=None,
+        domain=None,
+        prokaryote=False,
+        s_values="dosReis",
+        genetic_code=1,
+    ):
+        self.counter = CodonCounter(
+            genetic_code=genetic_code, ignore_stop=True
+        )  # score is not defined for STOP codons
 
         # tRNA gene copy numbers of the organism
         if url is not None or (genome_id is not None and domain is not None):
             tGCN = fetch_GCN_from_GtRNAdb(url=url, domain=domain, genome=genome_id)
         if tGCN is None:
-            raise TypeError('must provide either: tGCN dataframe, GtRNAdb url, or GtRNAdb genome_id+domain')
-        tGCN['anti_codon'] = tGCN['anti_codon'].str.upper().str.replace('U', 'T')
+            raise TypeError(
+                "must provide either: tGCN dataframe, GtRNAdb url, or GtRNAdb genome_id+domain"
+            )
+        tGCN["anti_codon"] = tGCN["anti_codon"].str.upper().str.replace("U", "T")
         self.tGCN = tGCN
 
         # S-values: tRNA-codon efficiency of coupling
@@ -695,19 +772,23 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
             self.s_values = s_values
         elif type(s_values) is str:
             self.s_values = pd.read_csv(
-                f'{os.path.dirname(__file__)}/tAI_svalues_{s_values}.csv',
-                dtype={'weight': float, 'prokaryote': bool}, comment='#')
+                f"{os.path.dirname(__file__)}/tAI_svalues_{s_values}.csv",
+                dtype={"weight": float, "prokaryote": bool},
+                comment="#",
+            )
         else:
-            raise TypeError(f"s_values must be provided as string or dataframe")
-        self.s_values['anti'] = self.s_values['anti'].str.upper().str.replace('U', 'T')
-        self.s_values['cod'] = self.s_values['cod'].str.upper().str.replace('U', 'T')
+            raise TypeError("s_values must be provided as string or dataframe")
+        self.s_values["anti"] = self.s_values["anti"].str.upper().str.replace("U", "T")
+        self.s_values["cod"] = self.s_values["cod"].str.upper().str.replace("U", "T")
         if not prokaryote:
-            self.s_values = self.s_values.loc[~self.s_values['prokaryote']]
+            self.s_values = self.s_values.loc[~self.s_values["prokaryote"]]
 
         self.weights = self._calc_weights()
         self.log_weights = np.log(self.weights)
 
-    def optimize_s_values(self, ref_seq, expression, optimize_wc=False, method="Powell", **kwargs):
+    def optimize_s_values(
+        self, ref_seq, expression, optimize_wc=False, method="Powell", **kwargs
+    ):
         """
         Optimizes s-values such that the Spearman correlation between tAI calculated on ref_seq and expression is maximal.
 
@@ -732,12 +813,13 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         """
         if len(ref_seq) != len(expression):
             raise ValueError(
-                f'lengths of ref_seq, expression do not match: {len(ref_seq)} != {len(expression)}')
+                f"lengths of ref_seq, expression do not match: {len(ref_seq)} != {len(expression)}"
+            )
         # Ensure values are finite
         valid = np.isfinite(expression)
         expression = [e for e, v in zip(expression, valid) if v]
         ref_seq = [s for s, v in zip(ref_seq, valid) if v]
-        print(f'optimize_s_values: removed {(~valid).sum():,d} non-finite values')
+        print(f"optimize_s_values: removed {(~valid).sum():,d} non-finite values")
 
         def func(weights):
             self.s_values["weight"] = weights
@@ -757,31 +839,35 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
     def _calc_weights(self):
         # init the dataframe
-        weights = self.counter.count('').get_aa_table().to_frame('count')
-        weights = weights.join(weights.groupby('aa', group_keys=False).size().to_frame('deg')) \
-            .reset_index().drop(columns=['aa'])[['codon', 'deg']]
+        weights = self.counter.count("").get_aa_table().to_frame("count")
+        weights = (
+            weights.join(weights.groupby("aa", group_keys=False).size().to_frame("deg"))
+            .reset_index()
+            .drop(columns=["aa"])[["codon", "deg"]]
+        )
         # columns: codon, deg
 
         # match all possible tRNAs to codons by the 1st,2nd positions
-        weights['cod_12'] = weights['codon'].str[:2]
-        self.tGCN['cod_12'] = self.tGCN['anti_codon'].apply(reverse_complement).str[:2]
-        weights = weights.merge(self.tGCN, on='cod_12')
+        weights["cod_12"] = weights["codon"].str[:2]
+        self.tGCN["cod_12"] = self.tGCN["anti_codon"].apply(reverse_complement).str[:2]
+        weights = weights.merge(self.tGCN, on="cod_12")
         # columns: codon, deg, cod_12, anti_codon, GCN
 
         # match all possible pairs to S-values by the 3rd position
-        weights['anti'] = weights['anti_codon'].str[0]
-        weights['cod'] = weights['codon'].str[-1]
-        weights = weights.merge(self.s_values, on=['anti', 'cod'])
-        weights = weights.loc[weights['deg'] >= weights['min_deg']]
+        weights["anti"] = weights["anti_codon"].str[0]
+        weights["cod"] = weights["codon"].str[-1]
+        weights = weights.merge(self.s_values, on=["anti", "cod"])
+        weights = weights.loc[weights["deg"] >= weights["min_deg"]]
         # columns: codon, deg, cod_12, anti_codon, GCN,
         #          anti, cod, min_deg, weight, prokaryote
 
-        weights['weight'] = (1 - weights['weight']) * weights['GCN']
-        weights = weights.groupby('codon')['weight'].sum()
+        weights["weight"] = (1 - weights["weight"]) * weights["GCN"]
+        weights = weights.groupby("codon")["weight"].sum()
 
         weights /= weights.max()
         weights[weights == 0] = stats.gmean(
-            weights[(weights != 0) & np.isfinite(weights)])
+            weights[(weights != 0) & np.isfinite(weights)]
+        )
 
         return weights
 
@@ -833,10 +919,15 @@ class CodonPairBias(ScalarScore, VectorScore, WeightScore):
     codonbias.pairwise.CodonUsageFrequency
     """
 
-    def __init__(self, ref_seq, k_mer=2, genetic_code=1,
-                 ignore_stop=True, pseudocount=1):
-        self.counter = CodonCounter(k_mer=k_mer, concat_index=True,
-                                    genetic_code=genetic_code, ignore_stop=ignore_stop)
+    def __init__(
+        self, ref_seq, k_mer=2, genetic_code=1, ignore_stop=True, pseudocount=1
+    ):
+        self.counter = CodonCounter(
+            k_mer=k_mer,
+            concat_index=True,
+            genetic_code=genetic_code,
+            ignore_stop=ignore_stop,
+        )
         self.k_mer = k_mer
         self.pseudocount = pseudocount
 
@@ -849,7 +940,8 @@ class CodonPairBias(ScalarScore, VectorScore, WeightScore):
 
     def _calc_vector(self, seq):
         return self.weights.reindex(
-            self._get_codon_vector(seq, k_mer=self.k_mer)).values
+            self._get_codon_vector(seq, k_mer=self.k_mer)
+        ).values
 
     def _calc_seq_weights(self, seq):
         return self._calc_model_weights(seq)
@@ -859,49 +951,54 @@ class CodonPairBias(ScalarScore, VectorScore, WeightScore):
         Calculates the Codon Pair Score (CPS) for each pair (or k-mer).
         That is, the log-ratios of observed over expected frequencies.
         """
-        weights = CodonCounter(seq,
-                               k_mer=self.k_mer, concat_index=False,
-                               genetic_code=self.counter.genetic_code,
-                               ignore_stop=self.counter.ignore_stop) \
-            .get_aa_table().to_frame('count')
-        aa_levels = [n for n in weights.index.names if 'aa' in n]
-        cod_levels = [n for n in weights.index.names if 'codon' in n]
+        weights = (
+            CodonCounter(
+                seq,
+                k_mer=self.k_mer,
+                concat_index=False,
+                genetic_code=self.counter.genetic_code,
+                ignore_stop=self.counter.ignore_stop,
+            )
+            .get_aa_table()
+            .to_frame("count")
+        )
+        aa_levels = [n for n in weights.index.names if "aa" in n]
+        cod_levels = [n for n in weights.index.names if "codon" in n]
 
-        weights['count'] += self.pseudocount
-        weights = self._calc_freq(weights, 'aa')
-        weights = self._calc_freq(weights, 'codon')
+        weights["count"] += self.pseudocount
+        weights = self._calc_freq(weights, "aa")
+        weights = self._calc_freq(weights, "codon")
 
-        weights = self._calc_enrichment(weights) \
-            .droplevel(aa_levels).reorder_levels(cod_levels) \
-            ['log_ratio']
-        weights.index = weights.index.to_series() \
-            .str.join('')
+        weights = (
+            self._calc_enrichment(weights)
+            .droplevel(aa_levels)
+            .reorder_levels(cod_levels)["log_ratio"]
+        )
+        weights.index = weights.index.to_series().str.join("")
 
         return weights
 
-    def _calc_freq(self, counts, word='aa'):
+    def _calc_freq(self, counts, word="aa"):
         levels = [n for n in counts.index.names if word in n]
 
         # calculate k-mer frequencies
-        freq_kmer = counts.groupby(levels)['count'].sum()
+        freq_kmer = counts.groupby(levels)["count"].sum()
         freq_kmer /= freq_kmer.sum()
-        counts = counts.join(freq_kmer.to_frame(f'freq_{word}_mer'))
+        counts = counts.join(freq_kmer.to_frame(f"freq_{word}_mer"))
 
         # calculate global frequencies of each "word"
         glob_count = []
         for l in levels:
-            glob_count.append(counts.groupby(l)['count'].sum())
+            glob_count.append(counts.groupby(l)["count"].sum())
         glob_count = pd.concat(glob_count, axis=1).sum(axis=1)
         glob_count /= glob_count.sum()
 
         # join with the counts dataframe
         for l in levels:
-            counts = counts.join(
-                glob_count.rename_axis(index=l).to_frame(l))
+            counts = counts.join(glob_count.rename_axis(index=l).to_frame(l))
 
         # calculate independent joint probabilities
-        counts = counts.join(counts[levels].prod(axis=1)
-                             .to_frame(f'freq_{word}_ind'))
+        counts = counts.join(counts[levels].prod(axis=1).to_frame(f"freq_{word}_ind"))
 
         return counts
 
@@ -911,9 +1008,12 @@ class CodonPairBias(ScalarScore, VectorScore, WeightScore):
         expected frequencies under the assumption that k-mers are
         distributed independently.
         """
-        freqs['log_ratio'] = \
-            np.log(freqs['freq_codon_mer'] / freqs['freq_codon_ind']
-                   * freqs['freq_aa_ind'] / freqs['freq_aa_mer'])
+        freqs["log_ratio"] = np.log(
+            freqs["freq_codon_mer"]
+            / freqs["freq_codon_ind"]
+            * freqs["freq_aa_ind"]
+            / freqs["freq_aa_mer"]
+        )
         return freqs
 
 
@@ -967,24 +1067,31 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
     codonbias.scores.EffectiveNumberOfCodons
     """
 
-    def __init__(self, directional=False, mean='geometric',
-                 genetic_code=1, ignore_stop=True, pseudocount=1):
+    def __init__(
+        self,
+        directional=False,
+        mean="geometric",
+        genetic_code=1,
+        ignore_stop=True,
+        pseudocount=1,
+    ):
         self.directional = directional
         self.mean = mean
         self.pseudocount = pseudocount
-        self.counter = CodonCounter(genetic_code=genetic_code,
-                                    ignore_stop=ignore_stop)
+        self.counter = CodonCounter(genetic_code=genetic_code, ignore_stop=ignore_stop)
 
     def _calc_score(self, seq):
         D = self._calc_seq_weights(seq)
-        counts = self.counter.counts  # counts have already been prepared in _calc_seq_weights
+        counts = (
+            self.counter.counts
+        )  # counts have already been prepared in _calc_seq_weights
 
-        if self.mean == 'geometric':
+        if self.mean == "geometric":
             return geomean(np.log(D), counts) - 1
-        elif self.mean == 'arithmetic':
+        elif self.mean == "arithmetic":
             return mean(D, counts)
         else:
-            raise ValueError(f'unknown mean: {self.mean}')
+            raise ValueError(f"unknown mean: {self.mean}")
 
     def _calc_vector(self, seq):
         D = self._calc_seq_weights(seq)
@@ -1006,19 +1113,21 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
         return D
 
     def _calc_BNC(self, seq):
-        """ Compute the background NUCLEOTIDE composition of the sequence. """
-        BNC = BaseCounter([seq[i::3] for i in range(3)],
-                          sum_seqs=False).get_table()
+        """Compute the background NUCLEOTIDE composition of the sequence."""
+        BNC = BaseCounter([seq[i::3] for i in range(3)], sum_seqs=False).get_table()
 
         return BNC
 
     def _calc_BCC(self, BNC):
-        """ Compute the background CODON composition of the sequence. """
+        """Compute the background CODON composition of the sequence."""
         BCC = pd.DataFrame(
-            [(c1 + c2 + c3, BNC[0][c1] * BNC[1][c2] * BNC[2][c3])
-             for c1, c2, c3 in product('ACGT', 'ACGT', 'ACGT')],
-            columns=['codon', 'bcc'])
-        BCC = BCC.set_index('codon')['bcc']
+            [
+                (c1 + c2 + c3, BNC[0][c1] * BNC[1][c2] * BNC[2][c3])
+                for c1, c2, c3 in product("ACGT", "ACGT", "ACGT")
+            ],
+            columns=["codon", "bcc"],
+        )
+        BCC = BCC.set_index("codon")["bcc"]
         BCC /= BCC.sum()
 
         return BCC
@@ -1072,34 +1181,48 @@ class NormalizedTranslationalEfficiency(ScalarScore, VectorScore):
     codonbias.scores.TrnaAdaptationIndex
     """
 
-    def __init__(self, ref_seq, mRNA_counts, tGCN=None, url=None, genome_id=None,
-                 domain=None, prokaryote=False, s_values='dosReis',
-                 genetic_code=1):
+    def __init__(
+        self,
+        ref_seq,
+        mRNA_counts,
+        tGCN=None,
+        url=None,
+        genome_id=None,
+        domain=None,
+        prokaryote=False,
+        s_values="dosReis",
+        genetic_code=1,
+    ):
         if len(ref_seq) != len(mRNA_counts):
             raise ValueError(
-                f'lengths of ref_seq, mRNA_counts do not match: {len(ref_seq)} != {len(mRNA_counts)}')
+                f"lengths of ref_seq, mRNA_counts do not match: {len(ref_seq)} != {len(mRNA_counts)}"
+            )
 
         # supply: classical translational efficiency
         self.tAI = TrnaAdaptationIndex(
-            tGCN=tGCN, url=url, genome_id=genome_id, domain=domain,
-            prokaryote=prokaryote, s_values=s_values,
-            genetic_code=genetic_code)
+            tGCN=tGCN,
+            url=url,
+            genome_id=genome_id,
+            domain=domain,
+            prokaryote=prokaryote,
+            s_values=s_values,
+            genetic_code=genetic_code,
+        )
 
         # demand: codon usage
         self.CU = CodonCounter(
-            ref_seq, sum_seqs=False,
-            genetic_code=genetic_code, ignore_stop=True) \
-            .get_codon_table()
-        self.CU = (self.CU * np.array(mRNA_counts)
-                   .reshape(1, -1)).sum(axis=1)  # sum weighted by mRNA counts
+            ref_seq, sum_seqs=False, genetic_code=genetic_code, ignore_stop=True
+        ).get_codon_table()
+        self.CU = (self.CU * np.array(mRNA_counts).reshape(1, -1)).sum(
+            axis=1
+        )  # sum weighted by mRNA counts
         self.CU = self.CU / self.CU.max()
 
         self.weights = self.tAI.weights / self.CU
         self.weights = self.weights / self.weights.max()
         self.log_weights = np.log(self.weights)
 
-        self.counter = CodonCounter(genetic_code=genetic_code,
-                                    ignore_stop=True)
+        self.counter = CodonCounter(genetic_code=genetic_code, ignore_stop=True)
 
     def _calc_score(self, seq):
         counts = self.counter.count(seq).counts
