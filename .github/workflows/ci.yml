@@ -17,7 +17,13 @@ jobs:
         uses: astral-sh/ruff-action@v3
         with:
           args: 'format --check'
-          src: " codonbias/ tests/"
+          src: "codonbias/ tests/"
+
+      - name: Run linter
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: 'check'
+          src: "codonbias/ tests/"
 
   build:
     needs: lint
