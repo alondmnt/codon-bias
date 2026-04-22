@@ -43,9 +43,6 @@ The package contains 6 submodules:
 __version__ = "0.3.5"
 __author__ = "Alon Diament"
 
-import codonbias.optimizers
-import codonbias.pairwise
-import codonbias.random
-import codonbias.scores
-import codonbias.stats
-import codonbias.utils  # noqa: F401
+__all__ = ["optimizers", "pairwise", "random", "scores", "stats", "utils"]
+
+from . import optimizers, pairwise, random, scores, stats, utils
