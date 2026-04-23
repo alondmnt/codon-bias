@@ -75,6 +75,22 @@ class CodonCounter(object):
         self._aa_to_idx = {aa: i for i, aa in enumerate(unique_aa)}
         self._aa_group = np.array([self._aa_to_idx[aa] for aa in code["aa"]])
 
+        # Byte-level LUTs for the vectorised k_mer=1 path in _count_single.
+        # Base ids: A=0 C=1 G=2 T=3, sentinel=4 for any other byte.
+        # Codon ids are base-5 packed (b0*25 + b1*5 + b2) so sentinel-containing
+        # triplets never collide with valid ACGT triplets.
+        self._base_lut = np.full(256, 4, dtype=np.uint8)
+        for b, i in zip(b"ACGT", range(4)):
+            self._base_lut[b] = i
+        self._codon_lex_to_aa = np.full(125, -1, dtype=np.int32)
+        for aa_idx, codon in enumerate(self._idx_to_codon):
+            lex = (
+                25 * "ACGT".index(codon[0])
+                + 5 * "ACGT".index(codon[1])
+                + "ACGT".index(codon[2])
+            )
+            self._codon_lex_to_aa[lex] = aa_idx
+
     def count(self, seqs):
         """
         Update the CodonCounter object with the codon counts of the given
@@ -127,11 +143,16 @@ class CodonCounter(object):
         seq = seq.upper().replace("U", "T")
 
         if self.k_mer == 1:
-            counts = np.zeros(len(self._codon_to_idx), dtype=float)
-            for i in range(0, len(seq) - 2, 3):
-                idx = self._codon_to_idx.get(seq[i : i + 3])
-                if idx is not None:
-                    counts[idx] += 1
+            b = seq.encode("ascii", errors="replace")
+            n_codons = len(b) // 3
+            arr = np.frombuffer(b[: n_codons * 3], dtype=np.uint8).reshape(n_codons, 3)
+            base_ids = self._base_lut[arr]
+            lex_ids = base_ids[:, 0] * 25 + base_ids[:, 1] * 5 + base_ids[:, 2]
+            aa_ids = self._codon_lex_to_aa[lex_ids]
+            valid = aa_ids >= 0
+            counts = np.bincount(
+                aa_ids[valid], minlength=len(self._idx_to_codon)
+            ).astype(float)
             aa_counts = np.bincount(
                 self._aa_group, weights=counts, minlength=self._n_aa
             )
