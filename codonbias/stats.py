@@ -5,6 +5,8 @@ from itertools import product
 import numpy as np
 import pandas as pd
 
+from .utils import iter_codons
+
 gc = pd.read_csv(
     f"{os.path.dirname(__file__)}/genetic_code_ncbi.csv", index_col=0
 ).sort_index()
@@ -159,7 +161,7 @@ class CodonCounter(object):
             return counts, aa_counts
 
         return pd.Series(
-            Counter([seq[i : i + 3 * self.k_mer] for i in range(0, len(seq), 3)]),
+            Counter(iter_codons(seq, k_mer=self.k_mer)),
             dtype=int,
         )
 

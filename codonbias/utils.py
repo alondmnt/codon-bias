@@ -14,6 +14,29 @@ gc = pd.read_csv(
 # https://en.wikipedia.org/wiki/List_of_genetic_codes
 
 
+def iter_codons(seq, k_mer=1):
+    """
+    Return in-frame codon (or k-mer) strings from ``seq``.
+
+    Uses a step-3 window of span ``3 * k_mer`` and emits only fully-spanned
+    k-mers, so any trailing partial codon (from non-multiple-of-3 input)
+    or trailing partial k-mer (from ``k_mer >= 2``) is dropped.
+
+    Parameters
+    ----------
+    seq : str
+        DNA/RNA sequence.
+    k_mer : int, optional
+        k-mer size in codons, by default 1.
+
+    Returns
+    -------
+    list of str
+        k-mer strings.
+    """
+    return [seq[i : i + 3 * k_mer] for i in range(0, len(seq) - 3 * k_mer + 1, 3)]
+
+
 def translate(seq, return_str=False, genetic_code=1):
     """
     Translate a nucleotide sequence and return its amino acids.

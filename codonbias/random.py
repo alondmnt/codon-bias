@@ -6,7 +6,7 @@ import psutil
 from pandarallel import pandarallel
 
 from .scores import VectorScore
-from .utils import greater_equal, less_equal, rankdata, translate
+from .utils import greater_equal, iter_codons, less_equal, rankdata, translate
 
 
 class Permuter(object):
@@ -263,7 +263,7 @@ class Permuter(object):
             seq, **self.property_args
         )  # may have multiple columns
         df = {
-            "seq": [seq[i : i + 3] for i in range(0, len(seq), 3)],
+            "seq": iter_codons(seq),
             "pos": np.arange(len(seq) // 3),
         }
         df.update(kwargs)

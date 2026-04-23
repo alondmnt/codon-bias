@@ -146,13 +146,21 @@ def test_enc_weighted_filter_undersampled(k_mer, bg_correction):
     """
     sparse_seq = ("TTT" * 20) + ("GCT" * 20)
     enc_w = EffectiveNumberOfCodons(
-        k_mer=k_mer, robust=False, mean="weighted", bg_correction=bg_correction,
+        k_mer=k_mer,
+        robust=False,
+        mean="weighted",
+        bg_correction=bg_correction,
     )
     enc_u = EffectiveNumberOfCodons(
-        k_mer=k_mer, robust=False, mean="unweighted", bg_correction=bg_correction,
+        k_mer=k_mer,
+        robust=False,
+        mean="unweighted",
+        bg_correction=bg_correction,
     )
     assert_allclose(
-        enc_w.get_score(sparse_seq), enc_u.get_score(sparse_seq), rtol=0.05,
+        enc_w.get_score(sparse_seq),
+        enc_u.get_score(sparse_seq),
+        rtol=0.05,
     )
 
 

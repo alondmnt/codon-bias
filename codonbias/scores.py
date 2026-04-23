@@ -6,7 +6,13 @@ import pandas as pd
 from scipy import optimize, stats
 
 from .stats import BaseCounter, CodonCounter
-from .utils import fetch_GCN_from_GtRNAdb, geomean, mean, reverse_complement
+from .utils import (
+    fetch_GCN_from_GtRNAdb,
+    geomean,
+    iter_codons,
+    mean,
+    reverse_complement,
+)
 
 
 class ScalarScore(object):
@@ -129,7 +135,7 @@ class VectorScore(object):
         raise Exception("not implemented")
 
     def _get_codon_vector(self, seq, k_mer=1):
-        return [seq[i : i + 3 * k_mer] for i in range(0, len(seq), 3)]
+        return iter_codons(seq, k_mer=k_mer)
 
 
 class WeightScore(object):
@@ -566,11 +572,7 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
 
         F = F.loc[(N > 1) & (F["F"] > 1e-6) & np.isfinite(F["F"])]
         if self.mean == "unweighted":
-            F = (
-                F.groupby("deg", group_keys=False)
-                .mean()
-                .join(deg_count, how="right")
-            )
+            F = F.groupby("deg", group_keys=False).mean().join(deg_count, how="right")
         elif self.mean == "weighted":
             F["F"] = F["F"] * F["N"]
             F = F.groupby("deg")["F"].sum() / F.groupby("deg")["N"].sum()
