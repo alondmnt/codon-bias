@@ -100,7 +100,11 @@ def ecoli_tgcn():
 
     Source: https://gtrnadb.ucsc.edu/genomes/bacteria/Esch_coli_K_12_MG1655/
     """
-    path = os.path.join(
-        os.path.dirname(__file__), ".test_data", "ecoli_tgcn.csv"
-    )
+    path = os.path.join(os.path.dirname(__file__), ".test_data", "ecoli_tgcn.csv")
     return pd.read_csv(path, comment="#")
+
+
+@pytest.fixture(scope="session")
+def ecoli_mrna_counts(ecoli_seqs):
+    """Deterministic placeholder mRNA counts for nTE regression tests."""
+    return np.ones(len(ecoli_seqs))
