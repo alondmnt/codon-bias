@@ -1,5 +1,7 @@
+import io
 import os
 import ssl
+import urllib.request
 
 import numpy as np
 import pandas as pd
@@ -140,10 +142,15 @@ def fetch_GCN_from_GtRNAdb(url=None, genome=None, domain=None):
 
     """
     if genome is not None and domain is not None:
-        url = f"http://gtrnadb.ucsc.edu/genomes/{domain}/{genome}/"
+        url = f"https://gtrnadb.ucsc.edu/genomes/{domain}/{genome}/"
 
     ssl._create_default_https_context = ssl._create_unverified_context
-    tables = pd.read_html(url)
+    # GtRNAdb blocks the default Python-urllib User-Agent with HTTP 403;
+    # fetch the HTML ourselves with a distinguishable UA, then parse.
+    req = urllib.request.Request(url, headers={"User-Agent": "codon-bias"})
+    with urllib.request.urlopen(req) as resp:
+        html = resp.read().decode("utf-8", errors="replace")
+    tables = pd.read_html(io.StringIO(html))
 
     return pd.concat(
         [process_GtRNAdb_table(t) for t in tables[-4:]], axis=0, ignore_index=True
