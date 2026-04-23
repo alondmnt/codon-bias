@@ -124,6 +124,38 @@ def test_enc_dataframe_regression(enc_default, random_seq_gen, dataframe_regress
     dataframe_regression.check(data)
 
 
+@pytest.mark.parametrize(
+    "k_mer,bg_correction",
+    [(1, False), (2, True)],
+    ids=["kmer1", "kmer2"],
+)
+def test_enc_weighted_filter_undersampled(k_mer, bg_correction):
+    """Regression for #15: weighted mean must filter undersampled AAs.
+
+    Without the filter, pseudocount-only AAs give F ~ 0 in non-robust
+    mode and dilute the weighted mean toward zero. The resulting ENC
+    sum hits deg_count/0 = inf, silently capped at 61 by the
+    `min(len(P), ENC)` guard — an isfinite check alone cannot catch it.
+
+    On a strongly biased sparse sequence, each degeneracy group has
+    at most one present AA after filtering, so the weighted mean
+    collapses to the unweighted mean (which already had the filter
+    pre-fix). Pre-fix, weighted capped at 61 while unweighted gave
+    the correct ~37.67 (kmer1) / ~10.40 (kmer2). The two parametri-
+    sations each trigger the bug in one of the two code paths.
+    """
+    sparse_seq = ("TTT" * 20) + ("GCT" * 20)
+    enc_w = EffectiveNumberOfCodons(
+        k_mer=k_mer, robust=False, mean="weighted", bg_correction=bg_correction,
+    )
+    enc_u = EffectiveNumberOfCodons(
+        k_mer=k_mer, robust=False, mean="unweighted", bg_correction=bg_correction,
+    )
+    assert_allclose(
+        enc_w.get_score(sparse_seq), enc_u.get_score(sparse_seq), rtol=0.05,
+    )
+
+
 @pytest.mark.parametrize("pseudocount, result", [(0, 35.0), (1, 44.063646)])
 def test_enc_missing_3fold_deg(pseudocount, result):
     """
