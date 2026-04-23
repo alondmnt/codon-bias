@@ -564,10 +564,10 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         F["N"] = N
         deg_count = F.groupby("deg").size().to_frame("deg_count")
 
+        F = F.loc[(N > 1) & (F["F"] > 1e-6) & np.isfinite(F["F"])]
         if self.mean == "unweighted":
             F = (
-                F.loc[(N > 1) & (F["F"] > 1e-6) & np.isfinite(F["F"])]
-                .groupby("deg", group_keys=False)
+                F.groupby("deg", group_keys=False)
                 .mean()
                 .join(deg_count, how="right")
             )
@@ -593,11 +593,10 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
 
         for deg in unique_degs:
             mask = self._aa_deg == deg
+            valid = mask & (N > 1) & (F > 1e-6) & np.isfinite(F)
             if self.mean == "unweighted":
-                valid = mask & (N > 1) & (F > 1e-6) & np.isfinite(F)
                 F_by_deg[deg] = F[valid].mean() if valid.any() else np.nan
             elif self.mean == "weighted":
-                valid = mask & np.isfinite(F)
                 sum_N = N[valid].sum()
                 F_by_deg[deg] = (
                     (F[valid] * N[valid]).sum() / sum_N if sum_N > 0 else np.nan
