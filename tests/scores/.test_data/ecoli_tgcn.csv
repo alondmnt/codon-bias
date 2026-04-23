@@ -1,0 +1,45 @@
+# E. coli K-12 MG1655 tRNA gene copy numbers.
+# Source: https://gtrnadb.ucsc.edu/genomes/bacteria/Esch_coli_K_12_MG1655/
+# Generated via codonbias.utils.fetch_GCN_from_GtRNAdb.
+anti_codon,GCN
+ACG,4
+CAA,1
+CAG,4
+CAT,2
+CAT,6
+CCA,1
+CCC,1
+CCG,1
+CCT,1
+CGA,1
+CGG,1
+CGT,2
+CTG,2
+GAA,2
+GAC,2
+GAG,1
+GAT,3
+GCA,1
+GCC,4
+GCT,1
+GGA,2
+GGC,2
+GGG,1
+GGT,2
+GTA,3
+GTC,3
+GTG,1
+GTT,4
+TAA,1
+TAC,5
+TAG,1
+TCA,1
+TCC,1
+TCT,1
+TGA,1
+TGC,3
+TGG,1
+TGT,1
+TTC,4
+TTG,2
+TTT,6

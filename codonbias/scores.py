@@ -797,6 +797,9 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
         self.weights = self._calc_weights()
         self.log_weights = np.log(self.weights)
+        self._log_weights_arr = self.log_weights.reindex(
+            self.counter._idx_to_codon
+        ).values
 
     def optimize_s_values(
         self, ref_seq, expression, optimize_wc=False, method="Powell", **kwargs
@@ -837,6 +840,9 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
             self.s_values["weight"] = weights
             self.weights = self._calc_weights()
             self.log_weights = np.log(self.weights)
+            self._log_weights_arr = self.log_weights.reindex(
+                self.counter._idx_to_codon
+            ).values
             return -stats.spearmanr(self.get_score(ref_seq), expression).statistic
 
         x0 = np.array(self.s_values["weight"])
@@ -884,9 +890,12 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         return weights
 
     def _calc_score(self, seq):
-        counts = self.counter.count(seq).counts
-
-        return geomean(self.log_weights, counts)
+        counts, _ = self.counter._count_single(seq)
+        mask = np.isfinite(self._log_weights_arr)
+        return np.exp(
+            (self._log_weights_arr[mask] * counts[mask]).sum()
+            / counts[mask].sum()
+        )
 
     def _calc_vector(self, seq):
         return self.weights.reindex(self._get_codon_vector(seq)).values

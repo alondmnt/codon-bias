@@ -3,6 +3,7 @@ import hashlib
 import os
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from codonbias.scores import EffectiveNumberOfCodons
@@ -91,3 +92,15 @@ def random_seq_gen():
 def enc_default():
     """Provides a default EffectiveNumberOfCodons instance."""
     return EffectiveNumberOfCodons()
+
+
+@pytest.fixture(scope="session")
+def ecoli_tgcn():
+    """E. coli K-12 MG1655 tRNA gene copy numbers.
+
+    Source: https://gtrnadb.ucsc.edu/genomes/bacteria/Esch_coli_K_12_MG1655/
+    """
+    path = os.path.join(
+        os.path.dirname(__file__), ".test_data", "ecoli_tgcn.csv"
+    )
+    return pd.read_csv(path, comment="#")
