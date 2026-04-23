@@ -426,8 +426,14 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         self._calc_weights(ref_seq)
 
     def _calc_score(self, seq):
+        if self.k_mer == 1:
+            counts, _ = self.counter._count_single(seq)
+            mask = np.isfinite(self._log_weights_arr)
+            return np.exp(
+                (self._log_weights_arr[mask] * counts[mask]).sum()
+                / counts[mask].sum()
+            )
         counts = self.counter.count(seq).counts
-
         return geomean(self.log_weights, counts)
 
     def _calc_vector(self, seq):
@@ -448,6 +454,11 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         )
 
         self.log_weights = np.log(self.weights)
+
+        if self.k_mer == 1:
+            self._log_weights_arr = self.log_weights.reindex(
+                self.counter._idx_to_codon
+            ).values
 
 
 class EffectiveNumberOfCodons(ScalarScore, WeightScore):
