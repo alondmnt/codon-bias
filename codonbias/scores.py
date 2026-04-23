@@ -259,11 +259,12 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         self.weights[self.weights >= self.thresh] = 1  # optimal
         self.weights[self.weights < self.thresh] = 0  # non-optimal
         self.weights = self.weights.droplevel("aa")
+        self._weights_arr = self.weights.reindex(self.counter._idx_to_codon).values
 
     def _calc_score(self, seq):
-        counts = self.counter.count(seq).counts
-
-        return mean(self.weights, counts)
+        counts, _ = self.counter._count_single(seq)
+        mask = np.isfinite(self._weights_arr)
+        return (self._weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()
 
     def _calc_vector(self, seq):
         return self.weights.reindex(self._get_codon_vector(seq)).values
