@@ -703,10 +703,11 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
     def _calc_BCC(self, BNC):
         """Compute the background CODON composition of the sequence."""
         if self.k_mer == 1:
-            # BNC is a pd.Series indexed ACGT (BaseCounter guarantees this
-            # order), so .values lines up with _codon_base_idx directly.
-            bnc = BNC.values
-            bcc = bnc[self._codon_base_idx].prod(axis=1)
+            # _codon_base_idx is populated assuming BNC.values is in ACGT
+            # order — BaseCounter.count() guarantees this, but assert so a
+            # future reordering fails loudly instead of silently miscomputing.
+            assert list(BNC.index) == list("ACGT")
+            bcc = BNC.values[self._codon_base_idx].prod(axis=1)
             aa_sums = np.bincount(
                 self.counter._aa_group,
                 weights=bcc,
