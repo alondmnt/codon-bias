@@ -11,6 +11,12 @@ gc = pd.read_csv(
     f"{os.path.dirname(__file__)}/genetic_code_ncbi.csv", index_col=0
 ).sort_index()
 
+# Byte-level LUT shared by the vectorised k_mer=1 paths.
+# A=0, C=1, G=2, T=3, sentinel=4 for any other byte.
+_BASE_LUT = np.full(256, 4, dtype=np.uint8)
+for _b, _i in zip(b"ACGT", range(4)):
+    _BASE_LUT[_b] = _i
+
 
 # https://en.wikipedia.org/wiki/List_of_genetic_codes
 
@@ -415,6 +421,13 @@ class BaseCounter(object):
         if not isinstance(seq, str):
             raise ValueError(f"sequence is not a string: {type(seq)}")
         seq = seq.upper().replace("U", "T")
+
+        if self.k_mer == 1:
+            b = seq.encode("ascii", errors="replace")
+            arr = np.frombuffer(b, dtype=np.uint8)[self.frame - 1 :: self.step]
+            base_ids = _BASE_LUT[arr]
+            counts = np.bincount(base_ids[base_ids < 4], minlength=4)
+            return pd.Series(counts, index=list("ACGT"), dtype=int)
 
         last_pos = len(seq) - self.k_mer + 1
         return pd.Series(
