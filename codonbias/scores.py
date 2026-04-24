@@ -1130,6 +1130,20 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
         self.pseudocount = pseudocount
         self.counter = CodonCounter(genetic_code=genetic_code, ignore_stop=ignore_stop)
 
+        # Per-codon base indices for the vectorised _calc_BCC path. Row i
+        # holds [b0, b1, b2] for codon i; column j is the base at position j.
+        # Shape (64, 3) int8 = 192 B for any genetic code.
+        codons = ["".join(c) for c in product("ACGT", "ACGT", "ACGT")]
+        base_to_idx = {"A": 0, "C": 1, "G": 2, "T": 3}
+        self._codon_pos_idx = np.array(
+            [[base_to_idx[b] for b in cod] for cod in codons],
+            dtype=np.int8,
+        )
+        self._bcc_index = pd.Index(codons, name="codon")
+        # Reused on every _calc_BNC call to skip BaseCounter's pandas
+        # scaffolding. Same reach-through pattern ENC._calc_BNC uses.
+        self._base_counter = BaseCounter()
+
     def _calc_score(self, seq):
         D = self._calc_seq_weights(seq)
         counts = (
@@ -1163,24 +1177,30 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
         return D
 
     def _calc_BNC(self, seq):
-        """Compute the background NUCLEOTIDE composition of the sequence."""
-        BNC = BaseCounter([seq[i::3] for i in range(3)], sum_seqs=False).get_table()
+        """Compute the per-position background nucleotide composition.
 
+        Returns an ndarray of shape (4, 3): rows are bases (A=0, C=1, G=2,
+        T=3), columns are codon positions (0, 1, 2). Counts are raw — the
+        global normalisation happens in _calc_BCC. Matches the previous
+        `seq[i::3]` semantics, including trailing partial-codon bases.
+        """
+        BNC = np.empty((4, 3), dtype=int)
+        for pos in range(3):
+            BNC[:, pos] = self._base_counter._count_single(seq[pos::3])
         return BNC
 
     def _calc_BCC(self, BNC):
-        """Compute the background CODON composition of the sequence."""
-        BCC = pd.DataFrame(
-            [
-                (c1 + c2 + c3, BNC[0][c1] * BNC[1][c2] * BNC[2][c3])
-                for c1, c2, c3 in product("ACGT", "ACGT", "ACGT")
-            ],
-            columns=["codon", "bcc"],
-        )
-        BCC = BCC.set_index("codon")["bcc"]
-        BCC /= BCC.sum()
+        """Compute the background CODON composition of the sequence.
 
-        return BCC
+        Position-aware product: for codon (b0, b1, b2),
+            BCC[cod] ∝ BNC[b0, 0] * BNC[b1, 1] * BNC[b2, 2]
+        then normalised to sum to 1. Equivalent to the previous
+        Series-indexed listcomp; preserves the raw-counts-then-normalise
+        semantics (no per-position pseudocount).
+        """
+        bcc = BNC[self._codon_pos_idx, np.arange(3)].prod(axis=1).astype(float)
+        bcc /= bcc.sum()
+        return pd.Series(bcc, index=self._bcc_index)
 
 
 class NormalizedTranslationalEfficiency(ScalarScore, VectorScore):
