@@ -286,19 +286,30 @@ class Permuter(object):
         Return `n` permutations of a dataframe based on the property
         column(s) `by` and a value column `col`.
         """
+        df["_group_idx"] = df.groupby(by, sort=True).ngroup()
         return (
-            df.groupby(by)
+            df.groupby(by, sort=True)
             .parallel_apply(lambda x: self._permute_col(x, col, n))
             .droplevel(by)
+            .drop(columns="_group_idx")
         )
 
     def _permute_col(self, df, col, n):
         """
         Returns a DataFrame with `n` permutations of the column `col`.
+
+        Each group gets an independent PCG64 stream derived from
+        ``random_state + group_idx``; NumPy's ``SeedSequence`` mixing
+        guarantees uncorrelated streams across groups while keeping
+        output reproducible for a given ``random_state`` and input.
+        Note that group indices are assigned by sorted group-key order,
+        so adding or removing sequences can shift which stream a given
+        group receives.
         """
-        np.random.seed(self.random_state)
+        group_idx = int(df["_group_idx"].iloc[0])
+        rng = np.random.default_rng(self.random_state + group_idx)
         for i in range(n):
-            df[f"null_{i}"] = np.random.permutation(df[col])
+            df[f"null_{i}"] = rng.permutation(df[col].values)
         return df
 
     def _permute_vector(self, vector, seqs, return_pval=False, alternative="greater"):
