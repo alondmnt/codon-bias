@@ -547,13 +547,23 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         self.template = self.counter.count("").get_aa_table().to_frame()
         self.aa_deg = self.template.groupby("aa").size()
 
-        self.BCC_unif = self._calc_BCC(self._calc_BNC(""))
-
         if self.k_mer == 1:
+            # Per-codon base indices (A=0 C=1 G=2 T=3) for the vectorised
+            # _calc_BCC path. Shape (n_codons, 3), ~183 B for the standard code.
+            base_to_idx = {"A": 0, "C": 1, "G": 2, "T": 3}
+            self._codon_base_idx = np.array(
+                [
+                    [base_to_idx[b] for b in cod]
+                    for cod in self.template.index.get_level_values("codon")
+                ],
+                dtype=np.int8,
+            )
             self._aa_deg = np.bincount(
                 self.counter._aa_group, minlength=self.counter._n_aa
             )
             self._bcc_uniform = 1.0 / self._aa_deg[self.counter._aa_group]
+
+        self.BCC_unif = self._calc_BCC(self._calc_BNC(""))
 
     def _calc_seq_weights(self, seq, background=None):
         if self.k_mer == 1:
@@ -692,6 +702,19 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
 
     def _calc_BCC(self, BNC):
         """Compute the background CODON composition of the sequence."""
+        if self.k_mer == 1:
+            # BNC is a pd.Series indexed ACGT (BaseCounter guarantees this
+            # order), so .values lines up with _codon_base_idx directly.
+            bnc = BNC.values
+            bcc = bnc[self._codon_base_idx].prod(axis=1)
+            aa_sums = np.bincount(
+                self.counter._aa_group,
+                weights=bcc,
+                minlength=self.counter._n_aa,
+            )
+            bcc = bcc / aa_sums[self.counter._aa_group]
+            return pd.Series(bcc, index=self.template.index, name="bcc")
+
         BCC = self.template.copy()
         BCC["bcc"] = [
             np.prod([BNC[c] for c in cod])
