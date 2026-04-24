@@ -562,6 +562,9 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
                 self.counter._aa_group, minlength=self.counter._n_aa
             )
             self._bcc_uniform = 1.0 / self._aa_deg[self.counter._aa_group]
+            # Reused on every bg_correction=True sequence to skip the
+            # pd.Series wrapping of BaseCounter.count()/get_table().
+            self._base_counter = BaseCounter()
 
         self.BCC_unif = self._calc_BCC(self._calc_BNC(""))
 
@@ -695,19 +698,22 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         return F, P, N
 
     def _calc_BNC(self, seq):
-        """Compute the background NUCLEOTIDE composition of the sequence."""
-        BNC = BaseCounter(seq).get_table(normed=True)
+        """Compute the background NUCLEOTIDE composition of the sequence.
 
-        return BNC
+        k_mer=1 returns an ndarray in ACGT order; k_mer>1 returns a
+        pd.Series (legacy fallback used by the k_mer>1 _calc_BCC path).
+        """
+        if self.k_mer == 1:
+            counts = self._base_counter._count_single(seq).astype(float) + 1
+            counts /= counts.sum()
+            return counts
+        return BaseCounter(seq).get_table(normed=True)
 
     def _calc_BCC(self, BNC):
         """Compute the background CODON composition of the sequence."""
         if self.k_mer == 1:
-            # _codon_base_idx is populated assuming BNC.values is in ACGT
-            # order — BaseCounter.count() guarantees this, but assert so a
-            # future reordering fails loudly instead of silently miscomputing.
-            assert list(BNC.index) == list("ACGT")
-            bcc = BNC.values[self._codon_base_idx].prod(axis=1)
+            # BNC is an ndarray in ACGT order from _calc_BNC's k_mer=1 path.
+            bcc = BNC[self._codon_base_idx].prod(axis=1)
             aa_sums = np.bincount(
                 self.counter._aa_group,
                 weights=bcc,
