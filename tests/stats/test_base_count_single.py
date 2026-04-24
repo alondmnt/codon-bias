@@ -9,6 +9,7 @@ Mirrors the structure of tests/stats/test_count_single.py.
 
 from collections import Counter
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -32,13 +33,17 @@ def _reference_count_single(counter, seq):
     )
 
 
-def _canonical(counter, series):
-    """Normalise a raw _count_single Series to the full base alphabet.
+def _canonical(counter, out):
+    """Normalise a raw _count_single output to a full-alphabet int Series.
 
-    BaseCounter.count() itself performs `.reindex(self._init_table()).fillna(0)`
-    downstream, so comparing the canonical form is the contract that matters.
+    k_mer=1 returns an ndarray in _init_table() order; k_mer>1 returns a
+    Counter-based Series missing unobserved keys. Both get canonicalised
+    to a Series indexed by _init_table() so they can be compared.
     """
-    return series.reindex(counter._init_table()).fillna(0).astype(int)
+    idx = counter._init_table()
+    if isinstance(out, np.ndarray):
+        return pd.Series(out, index=idx).astype(int)
+    return out.reindex(idx).fillna(0).astype(int)
 
 
 SEQS = {
@@ -73,12 +78,17 @@ def test_count_single_rejects_non_string():
         counter._count_single(12345)
 
 
-def test_count_single_return_is_series():
-    """Contract: _count_single returns a pd.Series (k_mer=1 and k_mer>1)."""
-    for k in (1, 2):
-        counter = BaseCounter(k_mer=k)
-        out = counter._count_single("ACGTACGT")
-        assert isinstance(out, pd.Series)
+def test_count_single_return_types():
+    """Contract: ndarray for k_mer=1 (fast path), Series for k_mer>1 (fallback).
+
+    Matches CodonCounter._count_single's shape on its fast path.
+    """
+    out1 = BaseCounter(k_mer=1)._count_single("ACGTACGT")
+    assert isinstance(out1, np.ndarray)
+    assert out1.shape == (4,)
+
+    out2 = BaseCounter(k_mer=2)._count_single("ACGTACGT")
+    assert isinstance(out2, pd.Series)
 
 
 def test_count_kmer2_fallback_unchanged():

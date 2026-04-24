@@ -393,25 +393,34 @@ class BaseCounter(object):
         BaseCounter
             BaseCounter object (self) with updated counts
         """
-        self.counts = self._count(seqs)
-        self.counts = self.counts.reindex(self._init_table()).fillna(0)
-        if self.counts.ndim == 1:
-            self.counts = self.counts.rename("count")
+        res = self._count(seqs)
+        if self.k_mer == 1:
+            # _count returns ndarray: (4,) for single/sum, (4, N) for multi.
+            index = list("ACGT")
+            self.counts = (
+                pd.Series(res, index=index, name="count")
+                if res.ndim == 1
+                else pd.DataFrame(res, index=index)
+            )
+        else:
+            self.counts = res.reindex(self._init_table()).fillna(0)
+            if self.counts.ndim == 1:
+                self.counts = self.counts.rename("count")
 
         return self
 
     def _count(self, seqs):
         if isinstance(seqs, str):
             return self._count_single(seqs)
-        elif isinstance(seqs, list) or isinstance(seqs, np.ndarray):
-            counts = pd.concat([self._count_single(s) for s in seqs], axis=1).fillna(0)
-        else:
-            raise ValueError(f"unknown sequence type: {type(seqs)}")
-
-        if self.sum_seqs:
-            return counts.sum(axis=1)
-        else:
-            return counts
+        elif isinstance(seqs, (list, np.ndarray)):
+            if self.k_mer == 1:
+                counts = np.column_stack([self._count_single(s) for s in seqs])
+            else:
+                counts = pd.concat(
+                    [self._count_single(s) for s in seqs], axis=1
+                ).fillna(0)
+            return counts.sum(axis=1) if self.sum_seqs else counts
+        raise ValueError(f"unknown sequence type: {type(seqs)}")
 
     def _count_single(self, seq):
         if not isinstance(seq, str):
@@ -422,8 +431,7 @@ class BaseCounter(object):
             b = seq.encode("ascii", errors="replace")
             arr = np.frombuffer(b, dtype=np.uint8)[self.frame - 1 :: self.step]
             base_ids = _BASE_LUT[arr]
-            counts = np.bincount(base_ids[base_ids < 4], minlength=4)
-            return pd.Series(counts, index=list("ACGT"), dtype=int)
+            return np.bincount(base_ids[base_ids < 4], minlength=4)
 
         last_pos = len(seq) - self.k_mer + 1
         return pd.Series(
