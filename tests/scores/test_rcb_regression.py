@@ -53,3 +53,20 @@ def test_rcb_multiple_input_types():
     scores = rcb.get_score(seqs)
     assert isinstance(scores, np.ndarray)
     assert len(scores) == 2
+
+
+@pytest.mark.parametrize("genetic_code", [2, 11])
+@pytest.mark.parametrize("params", RCB_COMBINATIONS, ids=format_param_id)
+def test_rcb_non_standard_genetic_code(genetic_code, params):
+    """End-to-end smoke check on non-standard genetic codes.
+
+    RCB's `_calc_BCC` is structurally code-independent (iterates the full
+    64-codon lex product regardless), but the counter side of the
+    pipeline (`get_codon_table` / `P`) depends on `genetic_code`. This
+    test exercises the integration on codes 2 and 11.
+    """
+    rcb = RelativeCodonBiasScore(genetic_code=genetic_code, **params)
+    seqs = ["ATGCGTACG" * 10, "ATGAAACCCGGGTTT" * 5, "ATGATGATGATG"]
+    scores = rcb.get_score(seqs)
+    assert scores.shape == (len(seqs),)
+    assert np.isfinite(scores).all()
