@@ -4,7 +4,7 @@
 this release moves the scalar-score hot paths from pandas to numpy, with
 follow-on vectorisation of ENC's `bg_correction` path and a partial
 vectorisation of RCB. on E. coli K-12: ~47x on ENC default, ~25x on
-FOP/CAI/tAI/nTE, 11.9x on ENC with `bg_correction=True`, 1.7x on RCB.
+FOP/CAI/tAI/nTE, ~40x on ENC with `bg_correction=True`, 1.7x on RCB.
 public APIs are unchanged; two opt-in code paths have small behaviour
 changes (see breaking).
 
@@ -30,9 +30,12 @@ with the first ENC rewrite (PR #13) that everything else followed from.
 |--------------------------|-------:|-------:|------:|
 | ENC (default)            | ~6.8 s | 146 ms |  ~47x |
 | FOP / CAI / tAI / nTE    | ~1.0 s |  40 ms |  ~25x |
-| ENC (bg_correction=True) | ~9.8 s |  3.1 s |   ~3x |
-| ENC.get_score (#18 only) | 2.94 s | 246 ms | 11.9x |
+| ENC (bg_correction=True) | ~9.8 s | 246 ms |  ~40x |
 | RCB.get_score            | 4.78 s | 2.85 s |  1.7x |
+
+(of the ~40x on `bg_correction=True`, ~3x came from #8 - which left it
+at 3.1 s, dominated by `BaseCounter._count_single` and `_calc_BCC` -
+and the remaining 11.9x from #18.)
 
 ## fixes
 
