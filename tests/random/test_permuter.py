@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from codonbias.random import IntraSeqPermuter, Permuter
+from codonbias.random import Permuter
 
 
 @pytest.fixture
@@ -20,8 +20,8 @@ def seqs():
 
 def test_permuter_reproducibility(seqs):
     """Same ``random_state`` on the same input must produce bit-exact output."""
-    p1 = IntraSeqPermuter(n_samples=5, random_state=42, n_jobs=1)
-    p2 = IntraSeqPermuter(n_samples=5, random_state=42, n_jobs=1)
+    p1 = Permuter(scope="intra_seq", n_samples=5, random_state=42, n_jobs=1)
+    p2 = Permuter(scope="intra_seq", n_samples=5, random_state=42, n_jobs=1)
     out1 = p1.get_permuted_seq(seqs)
     out2 = p2.get_permuted_seq(seqs)
 
@@ -53,8 +53,8 @@ def test_permuter_independent_groups(seqs):
 
 def test_permuter_changes_with_random_state(seqs):
     """Different ``random_state`` values must produce different output."""
-    p1 = IntraSeqPermuter(n_samples=3, random_state=42, n_jobs=1)
-    p2 = IntraSeqPermuter(n_samples=3, random_state=7, n_jobs=1)
+    p1 = Permuter(scope="intra_seq", n_samples=3, random_state=42, n_jobs=1)
+    p2 = Permuter(scope="intra_seq", n_samples=3, random_state=7, n_jobs=1)
     out1 = p1.get_permuted_seq(seqs)
     out2 = p2.get_permuted_seq(seqs)
 
@@ -67,7 +67,9 @@ def test_permuter_no_global_state_pollution(seqs):
     before = np.random.random()
 
     np.random.seed(123)
-    IntraSeqPermuter(n_samples=3, random_state=42, n_jobs=1).get_permuted_seq(seqs)
+    Permuter(
+        scope="intra_seq", n_samples=3, random_state=42, n_jobs=1
+    ).get_permuted_seq(seqs)
     after = np.random.random()
 
     assert before == after, (
@@ -78,7 +80,7 @@ def test_permuter_no_global_state_pollution(seqs):
 def test_permuter_smoke_shape(seqs):
     """Smoke: output has one row per input sequence, `n_samples` columns."""
     n_samples = 7
-    p = IntraSeqPermuter(n_samples=n_samples, random_state=42, n_jobs=1)
+    p = Permuter(scope="intra_seq", n_samples=n_samples, random_state=42, n_jobs=1)
     out = p.get_permuted_seq(seqs)
 
     assert len(out) == len(seqs)
