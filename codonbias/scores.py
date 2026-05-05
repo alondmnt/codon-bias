@@ -349,38 +349,54 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore, WeightScore):
         self.reference = self.reference.get_aa_table(
             normed=True, pseudocount=pseudocount
         )
+        # Reference as ndarray in counter.codon_index order, for the
+        # vectorised _weights_and_counts path. Preserves the same numerical
+        # values the (aa, codon)-aligned Series gave previously.
+        self._reference_arr = (
+            self.reference.droplevel("aa").reindex(self.counter.codon_index).values
+        )
 
     def _calc_score(self, seq):
         D, counts = self._weights_and_counts(seq)
-        D = D.droplevel("aa")
-
         if self.mean == "geometric":
-            return geomean(np.log(D), counts) - 1
-        elif self.mean == "arithmetic":
-            return mean(D, counts)
-        else:
-            raise ValueError(f"unknown mean: {self.mean}")
+            log_D = np.log(D)
+            valid = np.isfinite(log_D)
+            return (
+                np.exp((log_D[valid] * counts[valid]).sum() / counts[valid].sum()) - 1
+            )
+        if self.mean == "arithmetic":
+            valid = np.isfinite(D)
+            return (D[valid] * counts[valid]).sum() / counts[valid].sum()
+        raise ValueError(f"unknown mean: {self.mean}")
 
     def _calc_vector(self, seq):
-        weights = self._calc_seq_weights(seq).droplevel("aa")
-        return weights.reindex(self._get_codon_vector(seq)).values
+        D, _ = self._weights_and_counts(seq)
+        # Map codon-indexed weights onto sequence positions; missing codons
+        # (e.g. STOPs when ignore_stop=True) yield NaN.
+        return (
+            pd.Series(D, index=self.counter.codon_index)
+            .reindex(self._get_codon_vector(seq))
+            .values
+        )
 
     def _calc_seq_weights(self, seq):
         D, _ = self._weights_and_counts(seq)
-        return D
+        # Public Series with the (aa, codon) MultiIndex matching `self.reference`.
+        return pd.Series(D, index=self.reference.index, name="weights")
 
     def _weights_and_counts(self, seq):
-        counter = self.counter.count(seq)
-        P = counter.get_aa_table(normed=True, pseudocount=self.pseudocount)
-        # codon weights
+        """Stateless. Returns (D, counts) as ndarrays in codon_index order."""
+        counts = self.counter.count_array(seq)
+        counts_pc = counts + self.pseudocount
+        aa_sums = np.bincount(
+            self.counter.aa_group, weights=counts_pc, minlength=self.counter.n_aa
+        )
+        P = counts_pc / aa_sums[self.counter.aa_group]
         if self.directional:
-            D = np.maximum(
-                P.divide(self.reference, axis=0), self.reference.divide(P, axis=0)
-            )
+            D = np.maximum(P / self._reference_arr, self._reference_arr / P)
         else:
-            D = P.divide(self.reference, axis=0)
-
-        return D, counter.counts
+            D = P / self._reference_arr
+        return D, counts
 
 
 class CodonAdaptationIndex(ScalarScore, VectorScore):
