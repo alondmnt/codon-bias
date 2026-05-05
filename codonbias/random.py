@@ -11,26 +11,36 @@ from .utils import greater_equal, iter_codons, less_equal, rankdata, translate
 
 class Permuter(object):
     """
-    This general-prupose permuter generates random sequences by shuffling
-    codons within and between sequences while preserving a defined
-    property of the sequence. This null model can be used to return the
-    shuffled sequences, or to estimate the z-score / p-value of weight
-    vectors associated with the sequence.
+    Permuter that generates random sequences by shuffling codons across
+    or within sequences while preserving a defined property. This null
+    model can be used to return the shuffled sequences, or to estimate
+    the z-score / p-value of weight vectors associated with the sequence.
 
-    The property (or properties) to be preserved by the permutation
-    is defined using `property_func`. For example, the default
+    The property (or properties) to be preserved by the permutation is
+    defined using `property_func`. For example, the default
     `property_func` translates the sequence to amino acids, and therefore
-    the permutation preserves the amino acid sequence. However, arbitrary
-    properties may be defined. When `n_samples` equals zero, the permuter
-    attemps to estimate the z-scores and p-values without actually
-    permuting the sequences (very fast). This is especially useful and
-    accurate for computing z-scores. While the resulting p-values are
-    highly correlated with permutation results, they tend to be
-    lower than permutation p-values by 30% on average (but up to 60% lower
-    at most).
+    the permutation preserves the amino acid sequence. The `scope`
+    parameter further constrains permutation:
+
+    - ``"inter_seq"``: codons can swap freely between sequences within
+      the same property group (default; matches the original
+      ``Permuter`` behaviour).
+    - ``"intra_seq"``: codons stay within their original sequence,
+      shuffling only across positions within that sequence.
+    - ``"intra_pos"``: codons stay at their original position, shuffling
+      only across sequences sharing that position.
+
+    When `n_samples` equals zero, the permuter attempts to estimate the
+    z-scores and p-values without actually permuting the sequences (very
+    fast). This is especially useful and accurate for computing
+    z-scores. While the resulting p-values are highly correlated with
+    permutation results, they tend to be lower than permutation p-values
+    by 30% on average (but up to 60% lower at most).
 
     Parameters
     ----------
+    scope : {'inter_seq', 'intra_seq', 'intra_pos'}, optional
+        Permutation scope, by default 'inter_seq'.
     property_func : function, optional
         Property generating function that accepts a sequence as input and
         returns a pandas.DataFrame with propery columns, by default
@@ -46,28 +56,33 @@ class Permuter(object):
         will use the number of available cores, by default None
     kwargs :
         Parameters to be passed to the `property_func`.
-
-    See also
-    --------
-    codonbias.random.IntraSeqPermuter : Within-sequence permutation.
-    codonbias.random.IntraPosPermuter : Positional permutation.
     """
+
+    _SCOPE_TO_ADD_PROPERTIES = {
+        "inter_seq": [],
+        "intra_seq": ["id"],
+        "intra_pos": ["pos"],
+    }
 
     def __init__(
         self,
+        scope="inter_seq",
         property_func=translate,
-        add_properties=None,
         n_samples=100,
         random_state=42,
         n_jobs=None,
         **kwargs,
     ):
-        if add_properties is None:
-            add_properties = []
+        if scope not in self._SCOPE_TO_ADD_PROPERTIES:
+            raise ValueError(
+                f"scope must be one of {tuple(self._SCOPE_TO_ADD_PROPERTIES)}, "
+                f"got {scope!r}"
+            )
 
+        self.scope = scope
         self.property_func = property_func
         self.property_args = kwargs
-        self.add_properties = add_properties
+        self.add_properties = self._SCOPE_TO_ADD_PROPERTIES[scope]
         self.n_samples = n_samples
         self.random_state = random_state
 
@@ -483,125 +498,26 @@ class Permuter(object):
         )
 
 
+def _deprecated_permuter(scope, old_name):
+    warnings.warn(
+        f"{old_name} is deprecated; use Permuter(scope={scope!r}) instead. "
+        "Will be removed in v0.6.0.",
+        FutureWarning,
+        stacklevel=3,
+    )
+
+
 class IntraSeqPermuter(Permuter):
-    """
-    This permuter generates random sequences by shuffling the codons
-    within each sequence while preserving a defined property of the
-    sequence. This null model can be used to return the shuffled
-    sequences, or to estimate the z-score / p-value of weight vectors
-    associated with the sequence.
+    """Deprecated. Use ``Permuter(scope='intra_seq')``."""
 
-    The property (or properties) to be preserved by the permutation
-    is defined using `property_func`. For example, the default
-    `property_func` translates the sequence to amino acids, and therefore
-    the permutation preserves the amino acid sequence. However, arbitrary
-    properties may be defined. When `n_samples` equals zero, the permuter
-    attemps to estimate the z-scores and p-values without actually
-    permuting the sequences (very fast). This is especially useful and
-    accurate for computing z-scores. While the resulting p-values are
-    highly correlated with permutation results, they tend to be
-    lower than permutation p-values by 30% on average (but up to 60% lower
-    at most).
-
-    Parameters
-    ----------
-    property_func : function, optional
-        Property generating function that accepts a sequence as input and
-        returns a pandas.DataFrame with propery columns, by default
-        utils.translate
-    n_samples : int, optional
-        The numper of permutations to generate for each sequence. When
-        zero, the permuter attempts to estimate the z-scores and
-        p-values without actually permuting the sequences, by default 100
-    random_state : int, optional
-        Random seed for the permutation function, by default 42
-    n_jobs : int or None, optional
-        Number of parallel processes to run. When set to None the permuter
-        will use the number of available cores, by default None
-    kwargs :
-        Parameters to be passed to the `property_func`.
-
-    See also
-    --------
-    codonbias.random.Permuter : General-purpose permutation.
-    codonbias.random.IntraPosPermuter : Positional permutation.
-    """
-
-    def __init__(
-        self,
-        property_func=translate,
-        n_samples=100,
-        random_state=42,
-        n_jobs=None,
-        **kwargs,
-    ):
-        super().__init__(
-            property_func=property_func,
-            add_properties=["id"],
-            n_samples=n_samples,
-            random_state=random_state,
-            n_jobs=n_jobs,
-            **kwargs,
-        )
+    def __init__(self, **kwargs):
+        _deprecated_permuter("intra_seq", "IntraSeqPermuter")
+        super().__init__(scope="intra_seq", **kwargs)
 
 
 class IntraPosPermuter(Permuter):
-    """
-    This permuter generates random sequences by shuffling codons in each
-    position between all sequences while preserving a defined property of
-    the sequence. This null model can be used to return the shuffled
-    sequences, or to estimate the z-score / p-value of weight vectors
-    associated with the sequence.
+    """Deprecated. Use ``Permuter(scope='intra_pos')``."""
 
-    The property (or properties) to be preserved by the permutation
-    is defined using `property_func`. For example, the default
-    `property_func` translates the sequence to amino acids, and therefore
-    the permutation preserves the amino acid sequence. However, arbitrary
-    properties may be defined. When `n_samples` equals zero, the permuter
-    attemps to estimate the z-scores and p-values without actually
-    permuting the sequences (very fast). This is especially useful and
-    accurate for computing z-scores. While the resulting p-values are
-    highly correlated with permutation results, they tend to be
-    lower than permutation p-values by 30% on average (but up to 60% lower
-    at most).
-
-    Parameters
-    ----------
-    property_func : fuction, optional
-        Property generating function that accepts a sequence as input and
-        returns a pandas.DataFrame with propery columns, by default
-        utils.translate
-    n_samples : int, optional
-        The numper of permutations to generate for each sequence. When
-        zero, the permuter attempts to estimate the z-scores and
-        p-values without actually permuting the sequences, by default 100
-    random_state : int, optional
-        Random seed for the permutation function, by default 42
-    n_jobs : int or None, optional
-        Number of parallel processes to run. When set to None the permuter
-        will use the number of available cores, by default None
-    kwargs :
-        Parameters to be passed to the `property_func`.
-
-    See also
-    --------
-    codonbias.random.Permuter : General-purpose permutation.
-    codonbias.random.IntraSeqPermuter : Within-sequence permutation.
-    """
-
-    def __init__(
-        self,
-        property_func=translate,
-        n_samples=100,
-        random_state=42,
-        n_jobs=None,
-        **kwargs,
-    ):
-        super().__init__(
-            property_func=property_func,
-            add_properties=["pos"],
-            n_samples=n_samples,
-            random_state=random_state,
-            n_jobs=n_jobs,
-            **kwargs,
-        )
+    def __init__(self, **kwargs):
+        _deprecated_permuter("intra_pos", "IntraPosPermuter")
+        super().__init__(scope="intra_pos", **kwargs)
