@@ -75,25 +75,62 @@ class CodonCounter(object):
 
         code = code.sort_values(["aa", "codon"])
 
-        self._idx_to_codon = code["codon"].tolist()
-        self._codon_to_idx = {c: i for i, c in enumerate(self._idx_to_codon)}
+        self.codon_index = code["codon"].tolist()
+        self._codon_to_idx = {c: i for i, c in enumerate(self.codon_index)}
 
         unique_aa = code["aa"].unique()
-        self._n_aa = len(unique_aa)
+        self.n_aa = len(unique_aa)
         self._aa_to_idx = {aa: i for i, aa in enumerate(unique_aa)}
-        self._aa_group = np.array([self._aa_to_idx[aa] for aa in code["aa"]])
+        self.aa_group = np.array([self._aa_to_idx[aa] for aa in code["aa"]])
 
-        # Base-5 packed codon LUT for the vectorised k_mer=1 path in
-        # _count_single. Codon ids are packed b0*25 + b1*5 + b2 so
-        # sentinel-containing triplets never collide with valid ACGT triplets.
+        # Transit aliases for the renamed attrs. Removed once all callers
+        # migrate to the public names.
+        self._idx_to_codon = self.codon_index
+        self._n_aa = self.n_aa
+        self._aa_group = self.aa_group
+
+        # Base-5 packed codon LUT for the vectorised k_mer=1 path. Codon
+        # ids are packed b0*25 + b1*5 + b2 so sentinel-containing triplets
+        # never collide with valid ACGT triplets.
         self._codon_lex_to_aa = np.full(125, -1, dtype=np.int32)
-        for aa_idx, codon in enumerate(self._idx_to_codon):
+        for aa_idx, codon in enumerate(self.codon_index):
             lex = (
                 25 * "ACGT".index(codon[0])
                 + 5 * "ACGT".index(codon[1])
                 + "ACGT".index(codon[2])
             )
             self._codon_lex_to_aa[lex] = aa_idx
+
+    def count_array(self, seq):
+        """Stateless k_mer=1 codon count.
+
+        Returns an ndarray of shape ``(len(self.codon_index),)`` ordered
+        by ``self.codon_index``. Does not touch ``self.counts``.
+
+        Parameters
+        ----------
+        seq : str
+            DNA sequence.
+
+        Returns
+        -------
+        numpy.ndarray
+            Codon counts as float.
+        """
+        if self.k_mer != 1:
+            raise NotImplementedError("count_array is currently k_mer=1 only")
+        if not isinstance(seq, str):
+            raise ValueError(f"sequence is not a string: {type(seq)}")
+
+        seq = seq.upper().replace("U", "T")
+        b = seq.encode("ascii", errors="replace")
+        n_codons = len(b) // 3
+        arr = np.frombuffer(b[: n_codons * 3], dtype=np.uint8).reshape(n_codons, 3)
+        base_ids = _BASE_LUT[arr]
+        lex_ids = base_ids[:, 0] * 25 + base_ids[:, 1] * 5 + base_ids[:, 2]
+        aa_ids = self._codon_lex_to_aa[lex_ids]
+        valid = aa_ids >= 0
+        return np.bincount(aa_ids[valid], minlength=len(self.codon_index)).astype(float)
 
     def count(self, seqs):
         """
@@ -114,9 +151,9 @@ class CodonCounter(object):
         # MINIMAL CHANGE: Wrap NumPy back to Pandas at the boundary for k_mer=1
         if self.k_mer == 1:
             self.counts = (
-                pd.Series(res, index=self._idx_to_codon, name="count")
+                pd.Series(res, index=self.codon_index, name="count")
                 if res.ndim == 1
-                else pd.DataFrame(res, index=self._idx_to_codon)
+                else pd.DataFrame(res, index=self.codon_index)
             )
             self.counts.index.name = "codon"
         else:
@@ -154,12 +191,10 @@ class CodonCounter(object):
             lex_ids = base_ids[:, 0] * 25 + base_ids[:, 1] * 5 + base_ids[:, 2]
             aa_ids = self._codon_lex_to_aa[lex_ids]
             valid = aa_ids >= 0
-            counts = np.bincount(
-                aa_ids[valid], minlength=len(self._idx_to_codon)
-            ).astype(float)
-            aa_counts = np.bincount(
-                self._aa_group, weights=counts, minlength=self._n_aa
+            counts = np.bincount(aa_ids[valid], minlength=len(self.codon_index)).astype(
+                float
             )
+            aa_counts = np.bincount(self.aa_group, weights=counts, minlength=self.n_aa)
             return counts, aa_counts
 
         return pd.Series(
@@ -377,6 +412,33 @@ class BaseCounter(object):
         self.sum_seqs = sum_seqs
         if seqs is not None:
             self.count(seqs)
+
+    def count_array(self, seq):
+        """Stateless k_mer=1 base count.
+
+        Returns an ndarray of shape ``(4,)`` in ACGT order. Respects
+        ``self.frame`` and ``self.step``. Does not touch ``self.counts``.
+
+        Parameters
+        ----------
+        seq : str
+            Nucleotide sequence.
+
+        Returns
+        -------
+        numpy.ndarray
+            Base counts as int.
+        """
+        if self.k_mer != 1:
+            raise NotImplementedError("count_array is currently k_mer=1 only")
+        if not isinstance(seq, str):
+            raise ValueError(f"sequence is not a string: {type(seq)}")
+
+        seq = seq.upper().replace("U", "T")
+        b = seq.encode("ascii", errors="replace")
+        arr = np.frombuffer(b, dtype=np.uint8)[self.frame - 1 :: self.step]
+        base_ids = _BASE_LUT[arr]
+        return np.bincount(base_ids[base_ids < 4], minlength=4)
 
     def count(self, seqs):
         """
