@@ -351,10 +351,8 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore, WeightScore):
         )
 
     def _calc_score(self, seq):
-        D = self._calc_seq_weights(seq).droplevel("aa")
-        counts = (
-            self.counter.counts
-        )  # counts have already been prepared in _calc_weights
+        D, counts = self._weights_and_counts(seq)
+        D = D.droplevel("aa")
 
         if self.mean == "geometric":
             return geomean(np.log(D), counts) - 1
@@ -368,9 +366,12 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore, WeightScore):
         return weights.reindex(self._get_codon_vector(seq)).values
 
     def _calc_seq_weights(self, seq):
-        P = self.counter.count(seq).get_aa_table(
-            normed=True, pseudocount=self.pseudocount
-        )
+        D, _ = self._weights_and_counts(seq)
+        return D
+
+    def _weights_and_counts(self, seq):
+        counter = self.counter.count(seq)
+        P = counter.get_aa_table(normed=True, pseudocount=self.pseudocount)
         # codon weights
         if self.directional:
             D = np.maximum(
@@ -379,7 +380,7 @@ class RelativeSynonymousCodonUsage(ScalarScore, VectorScore, WeightScore):
         else:
             D = P.divide(self.reference, axis=0)
 
-        return D
+        return D, counter.counts
 
 
 class CodonAdaptationIndex(ScalarScore, VectorScore):
@@ -1145,10 +1146,7 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
         self._base_counter = BaseCounter()
 
     def _calc_score(self, seq):
-        D = self._calc_seq_weights(seq)
-        counts = (
-            self.counter.counts
-        )  # counts have already been prepared in _calc_seq_weights
+        D, counts = self._weights_and_counts(seq)
 
         if self.mean == "geometric":
             return geomean(np.log(D), counts) - 1
@@ -1163,18 +1161,22 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
         return D.reindex(self._get_codon_vector(seq)).values
 
     def _calc_seq_weights(self, seq):
-        counts = self.counter.count(seq)
+        D, _ = self._weights_and_counts(seq)
+        return D
+
+    def _weights_and_counts(self, seq):
+        counter = self.counter.count(seq)
         # background probabilities
         BCC = self._calc_BCC(self._calc_BNC(seq))
         # observed probabilities
-        P = counts.get_codon_table(normed=True, pseudocount=self.pseudocount)
+        P = counter.get_codon_table(normed=True, pseudocount=self.pseudocount)
         # codon weights
         if self.directional:
             D = np.maximum(P / BCC, BCC / P)
         else:
             D = P / BCC
 
-        return D
+        return D, counter.counts
 
     def _calc_BNC(self, seq):
         """Compute the per-position background nucleotide composition.
