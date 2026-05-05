@@ -265,10 +265,10 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         self.weights[self.weights >= self.thresh] = 1  # optimal
         self.weights[self.weights < self.thresh] = 0  # non-optimal
         self.weights = self.weights.droplevel("aa")
-        self._weights_arr = self.weights.reindex(self.counter._idx_to_codon).values
+        self._weights_arr = self.weights.reindex(self.counter.codon_index).values
 
     def _calc_score(self, seq):
-        counts, _ = self.counter._count_single(seq)
+        counts = self.counter.count_array(seq)
         mask = np.isfinite(self._weights_arr)
         return (self._weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()
 
@@ -434,7 +434,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
 
     def _calc_score(self, seq):
         if self.k_mer == 1:
-            counts, _ = self.counter._count_single(seq)
+            counts = self.counter.count_array(seq)
             mask = np.isfinite(self._log_weights_arr)
             return np.exp(
                 (self._log_weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()
@@ -463,7 +463,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
 
         if self.k_mer == 1:
             self._log_weights_arr = self.log_weights.reindex(
-                self.counter._idx_to_codon
+                self.counter.codon_index
             ).values
 
 
@@ -828,7 +828,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         self.weights = self._calc_weights()
         self.log_weights = np.log(self.weights)
         self._log_weights_arr = self.log_weights.reindex(
-            self.counter._idx_to_codon
+            self.counter.codon_index
         ).values
 
     def optimize_s_values(
@@ -871,7 +871,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
             self.weights = self._calc_weights()
             self.log_weights = np.log(self.weights)
             self._log_weights_arr = self.log_weights.reindex(
-                self.counter._idx_to_codon
+                self.counter.codon_index
             ).values
             return -stats.spearmanr(self.get_score(ref_seq), expression).statistic
 
@@ -920,7 +920,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         return weights
 
     def _calc_score(self, seq):
-        counts, _ = self.counter._count_single(seq)
+        counts = self.counter.count_array(seq)
         mask = np.isfinite(self._log_weights_arr)
         return np.exp(
             (self._log_weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()
@@ -1295,11 +1295,11 @@ class NormalizedTranslationalEfficiency(ScalarScore, VectorScore):
 
         self.counter = CodonCounter(genetic_code=genetic_code, ignore_stop=True)
         self._log_weights_arr = self.log_weights.reindex(
-            self.counter._idx_to_codon
+            self.counter.codon_index
         ).values
 
     def _calc_score(self, seq):
-        counts, _ = self.counter._count_single(seq)
+        counts = self.counter.count_array(seq)
         mask = np.isfinite(self._log_weights_arr)
         return np.exp(
             (self._log_weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()
