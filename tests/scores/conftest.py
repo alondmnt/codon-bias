@@ -10,6 +10,14 @@ from codonbias.scores import EffectiveNumberOfCodons
 
 EXPECTED_MD5 = "aaee0253df6f7d1df7df00e84d582fd4"
 
+# Default subset for CI: deterministic head slice of the parsed ORFeome.
+# The full set runs the slowest ENC k_mer=2 regression in ~10 min; the
+# subset brings it well under a minute while still exercising every
+# parameter combination. Set `ECOLI_FULL=1` to load the full set (note:
+# regression baselines are committed against the subset, so full mode
+# also requires `--force-regen` for any test that uses pytest-regressions).
+ECOLI_SUBSET_SIZE = 500
+
 
 def get_file_md5(file_path):
     """Calculates the MD5 sum of a file efficiently by reading in chunks."""
@@ -27,6 +35,11 @@ def ecoli_seqs():
     Parses the local E. coli K-12 coding sequences.
     Scope is 'session' so it only runs once per pytest invocation.
     Includes MD5 integrity checking to ensure the local file isn't corrupted.
+
+    By default returns a deterministic head slice of the first
+    ``ECOLI_SUBSET_SIZE`` sequences. Set the ``ECOLI_FULL=1`` environment
+    variable to load the full set (used for one-off validation; regression
+    baselines are committed against the subset).
     """
     # Look for the file in the .test_data folder relative to this script
     test_data_dir = os.path.join(os.path.dirname(__file__), ".test_data")
@@ -68,6 +81,9 @@ def ecoli_seqs():
             joined_seq = "".join(seq)
             if len(joined_seq) % 3 == 0:
                 seqs.append(joined_seq)
+
+    if not os.environ.get("ECOLI_FULL"):
+        seqs = seqs[:ECOLI_SUBSET_SIZE]
 
     return seqs
 
