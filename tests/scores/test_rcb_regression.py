@@ -47,6 +47,13 @@ def test_rcb_basic_logic():
     assert np.isfinite(rcb.get_score("ATGATGATGATG"))
 
 
+def test_rcb_does_not_mutate_counter():
+    """Stateless contract: get_score must not populate self.counter.counts."""
+    rcb = RelativeCodonBiasScore()
+    rcb.get_score("ATGAAACCCGGGTTT")
+    assert not hasattr(rcb.counter, "counts")
+
+
 def test_rcb_multiple_input_types():
     rcb = RelativeCodonBiasScore()
     seqs = ["ATGCGTACG", "ATGATGATG"]
