@@ -1,10 +1,10 @@
-"""Equivalence tests for BaseCounter._count_single.
+"""Equivalence tests for BaseCounter.count_array.
 
 Compares the vectorised k_mer=1 implementation against an inline reference
-that reproduces the pre-vectorisation Python loop. The k_mer>1 path falls
-back to the same Counter-based code, so it's covered implicitly.
+that reproduces the pre-vectorisation Python loop. The k_mer>1 path uses
+Counter directly via the existing `count()` API and is covered separately.
 
-Mirrors the structure of tests/stats/test_count_single.py.
+Mirrors the structure of tests/stats/test_count_array.py.
 """
 
 from collections import Counter
@@ -16,7 +16,7 @@ import pytest
 from codonbias.stats import BaseCounter
 
 
-def _reference_count_single(counter, seq):
+def _reference_count_array(counter, seq):
     """Pre-vectorisation implementation, inlined here as the reference."""
     if not isinstance(seq, str):
         raise ValueError(f"sequence is not a string: {type(seq)}")
@@ -34,12 +34,7 @@ def _reference_count_single(counter, seq):
 
 
 def _canonical(counter, out):
-    """Normalise a raw _count_single output to a full-alphabet int Series.
-
-    k_mer=1 returns an ndarray in _init_table() order; k_mer>1 returns a
-    Counter-based Series missing unobserved keys. Both get canonicalised
-    to a Series indexed by _init_table() so they can be compared.
-    """
+    """Normalise a count output to a full-alphabet int Series for comparison."""
     idx = counter._init_table()
     if isinstance(out, np.ndarray):
         return pd.Series(out, index=idx).astype(int)
@@ -65,30 +60,37 @@ SEQS = {
 @pytest.mark.parametrize("name,seq", list(SEQS.items()))
 @pytest.mark.parametrize("step", [1, 3])
 @pytest.mark.parametrize("frame", [1, 2, 3])
-def test_count_single_kmer1_equivalence(name, seq, step, frame):
+def test_count_array_kmer1_equivalence(name, seq, step, frame):
     counter = BaseCounter(k_mer=1, step=step, frame=frame)
-    new = _canonical(counter, counter._count_single(seq))
-    ref = _canonical(counter, _reference_count_single(counter, seq))
+    new = _canonical(counter, counter.count_array(seq))
+    ref = _canonical(counter, _reference_count_array(counter, seq))
     pd.testing.assert_series_equal(new, ref, check_names=False)
 
 
-def test_count_single_rejects_non_string():
+def test_count_array_rejects_non_string():
     counter = BaseCounter()
     with pytest.raises(ValueError, match="sequence is not a string"):
-        counter._count_single(12345)
+        counter.count_array(12345)
 
 
-def test_count_single_return_types():
-    """Contract: ndarray for k_mer=1 (fast path), Series for k_mer>1 (fallback).
+def test_count_array_rejects_non_kmer_1():
+    counter = BaseCounter(k_mer=2)
+    with pytest.raises(NotImplementedError, match="k_mer=1"):
+        counter.count_array("ACGTACGT")
 
-    Matches CodonCounter._count_single's shape on its fast path.
-    """
-    out1 = BaseCounter(k_mer=1)._count_single("ACGTACGT")
-    assert isinstance(out1, np.ndarray)
-    assert out1.shape == (4,)
 
-    out2 = BaseCounter(k_mer=2)._count_single("ACGTACGT")
-    assert isinstance(out2, pd.Series)
+def test_count_array_does_not_mutate_state():
+    """count_array is stateless; self.counts must remain unset."""
+    counter = BaseCounter()
+    counter.count_array("ACGTACGT")
+    assert not hasattr(counter, "counts")
+
+
+def test_count_array_return_shape_and_dtype():
+    """Contract: ndarray of shape (4,) in ACGT order."""
+    out = BaseCounter().count_array("ACGTACGT")
+    assert isinstance(out, np.ndarray)
+    assert out.shape == (4,)
 
 
 def test_count_kmer2_fallback_unchanged():
@@ -97,7 +99,7 @@ def test_count_kmer2_fallback_unchanged():
     for step, frame in [(1, 1), (2, 1), (1, 2)]:
         counter = BaseCounter(k_mer=2, step=step, frame=frame)
         got = counter.count(seq).counts.astype(int)
-        ref_raw = _reference_count_single(counter, seq)
+        ref_raw = _reference_count_array(counter, seq)
         expected = ref_raw.reindex(counter._init_table()).fillna(0).astype(int)
         pd.testing.assert_series_equal(got, expected, check_names=False)
 

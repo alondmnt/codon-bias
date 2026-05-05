@@ -265,10 +265,10 @@ class FrequencyOfOptimalCodons(ScalarScore, VectorScore):
         self.weights[self.weights >= self.thresh] = 1  # optimal
         self.weights[self.weights < self.thresh] = 0  # non-optimal
         self.weights = self.weights.droplevel("aa")
-        self._weights_arr = self.weights.reindex(self.counter._idx_to_codon).values
+        self._weights_arr = self.weights.reindex(self.counter.codon_index).values
 
     def _calc_score(self, seq):
-        counts, _ = self.counter._count_single(seq)
+        counts = self.counter.count_array(seq)
         mask = np.isfinite(self._weights_arr)
         return (self._weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()
 
@@ -434,7 +434,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
 
     def _calc_score(self, seq):
         if self.k_mer == 1:
-            counts, _ = self.counter._count_single(seq)
+            counts = self.counter.count_array(seq)
             mask = np.isfinite(self._log_weights_arr)
             return np.exp(
                 (self._log_weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()
@@ -463,7 +463,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
 
         if self.k_mer == 1:
             self._log_weights_arr = self.log_weights.reindex(
-                self.counter._idx_to_codon
+                self.counter.codon_index
             ).values
 
 
@@ -560,9 +560,9 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
                 dtype=np.int8,
             )
             self._aa_deg = np.bincount(
-                self.counter._aa_group, minlength=self.counter._n_aa
+                self.counter.aa_group, minlength=self.counter.n_aa
             )
-            self._bcc_uniform = 1.0 / self._aa_deg[self.counter._aa_group]
+            self._bcc_uniform = 1.0 / self._aa_deg[self.counter.aa_group]
             # Reused on every bg_correction=True sequence to skip the
             # pd.Series wrapping of BaseCounter.count()/get_table().
             self._base_counter = BaseCounter()
@@ -662,11 +662,10 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         P: 1D array of shape (n_codons,) representing relative frequency of each codon w.r.t its group
         N: 1D array of shape (n_aa,) containing the total absolute counts of each AA observed in the sequence
         """
-        counts, _ = self.counter._count_single(seq)
-        counts = counts + self.pseudocount
-        aa_group = self.counter._aa_group
+        counts = self.counter.count_array(seq) + self.pseudocount
+        aa_group = self.counter.aa_group
 
-        N = np.bincount(aa_group, weights=counts, minlength=self.counter._n_aa)
+        N = np.bincount(aa_group, weights=counts, minlength=self.counter.n_aa)
 
         # Safely divide, leaving NaN where N is 0
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -687,7 +686,7 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         # Pandas .sum() ignores NaNs by default. We mimic this by masking NaNs before bincount.
         valid_chi2 = ~np.isnan(chi2)
         chi2_aa = np.bincount(
-            aa_group[valid_chi2], weights=chi2[valid_chi2], minlength=self.counter._n_aa
+            aa_group[valid_chi2], weights=chi2[valid_chi2], minlength=self.counter.n_aa
         )
 
         if not self.robust:
@@ -705,7 +704,7 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         pd.Series (legacy fallback used by the k_mer>1 _calc_BCC path).
         """
         if self.k_mer == 1:
-            counts = self._base_counter._count_single(seq).astype(float) + 1
+            counts = self._base_counter.count_array(seq).astype(float) + 1
             counts /= counts.sum()
             return counts
         return BaseCounter(seq).get_table(normed=True)
@@ -716,11 +715,11 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
             # BNC is an ndarray in ACGT order from _calc_BNC's k_mer=1 path.
             bcc = BNC[self._codon_base_idx].prod(axis=1)
             aa_sums = np.bincount(
-                self.counter._aa_group,
+                self.counter.aa_group,
                 weights=bcc,
-                minlength=self.counter._n_aa,
+                minlength=self.counter.n_aa,
             )
-            bcc = bcc / aa_sums[self.counter._aa_group]
+            bcc = bcc / aa_sums[self.counter.aa_group]
             return pd.Series(bcc, index=self.template.index, name="bcc")
 
         BCC = self.template.copy()
@@ -829,7 +828,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         self.weights = self._calc_weights()
         self.log_weights = np.log(self.weights)
         self._log_weights_arr = self.log_weights.reindex(
-            self.counter._idx_to_codon
+            self.counter.codon_index
         ).values
 
     def optimize_s_values(
@@ -872,7 +871,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
             self.weights = self._calc_weights()
             self.log_weights = np.log(self.weights)
             self._log_weights_arr = self.log_weights.reindex(
-                self.counter._idx_to_codon
+                self.counter.codon_index
             ).values
             return -stats.spearmanr(self.get_score(ref_seq), expression).statistic
 
@@ -921,7 +920,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
         return weights
 
     def _calc_score(self, seq):
-        counts, _ = self.counter._count_single(seq)
+        counts = self.counter.count_array(seq)
         mask = np.isfinite(self._log_weights_arr)
         return np.exp(
             (self._log_weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()
@@ -1188,7 +1187,7 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
         """
         BNC = np.empty((4, 3), dtype=int)
         for pos in range(3):
-            BNC[:, pos] = self._base_counter._count_single(seq[pos::3])
+            BNC[:, pos] = self._base_counter.count_array(seq[pos::3])
         return BNC
 
     def _calc_BCC(self, BNC):
@@ -1296,11 +1295,11 @@ class NormalizedTranslationalEfficiency(ScalarScore, VectorScore):
 
         self.counter = CodonCounter(genetic_code=genetic_code, ignore_stop=True)
         self._log_weights_arr = self.log_weights.reindex(
-            self.counter._idx_to_codon
+            self.counter.codon_index
         ).values
 
     def _calc_score(self, seq):
-        counts, _ = self.counter._count_single(seq)
+        counts = self.counter.count_array(seq)
         mask = np.isfinite(self._log_weights_arr)
         return np.exp(
             (self._log_weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()

@@ -169,7 +169,7 @@ def test_enc_weighted_filter_undersampled(k_mer, bg_correction):
 def test_enc_non_standard_genetic_code(genetic_code, bg_correction):
     """End-to-end smoke check on non-standard genetic codes.
 
-    The vectorised primitives (`CodonCounter._count_single` and
+    The vectorised primitives (`CodonCounter.count_array` and
     `_calc_BCC`) are unit-tested on codes 2 and 11 elsewhere; this
     test covers the full `get_score` pipeline to catch integration
     breakage on `genetic_code != 1`.
