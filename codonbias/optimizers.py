@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -6,11 +8,17 @@ from codonbias import scores, stats
 
 class WeightOptimizer(object):
     """
-    Abstract class for optimizers that use codon weights to choose
-    between synonymous sequences.
+    Optimizer that uses codon weights to choose between synonymous codons.
 
     Parameters
     ----------
+    strategy : {'max', 'min', 'balanced'}
+        Selection strategy:
+        - 'max': pick the highest-weight codon per position.
+        - 'min': pick the lowest-weight codon per position.
+        - 'balanced': sample codons with probability proportional to their
+          weight, yielding a balanced distribution where more optimal
+          codons appear at higher frequencies.
     weights : pd.Series, optional
         Codon weights, according to which optimization will encode the
         sequence, by default None
@@ -23,8 +31,23 @@ class WeightOptimizer(object):
         NCBI genetic code ID, by default 1
     """
 
-    def __init__(self, weights=None, model=None, higher_is_better=True, genetic_code=1):
+    _STRATEGIES = ("max", "min", "balanced")
+
+    def __init__(
+        self,
+        strategy,
+        weights=None,
+        model=None,
+        higher_is_better=True,
+        genetic_code=1,
+    ):
+        if strategy not in self._STRATEGIES:
+            raise ValueError(
+                f"strategy must be one of {self._STRATEGIES}, got {strategy!r}"
+            )
         self._validate_score(model)
+
+        self.strategy = strategy
 
         if weights is not None:
             self.weights = weights
@@ -94,82 +117,64 @@ class WeightOptimizer(object):
         )
 
     def optimize(self, seq_aa):
-        raise Exception("not implemented")
+        """
+        Encode an amino acid sequence using the configured strategy.
+
+        Parameters
+        ----------
+        seq_aa : str
+            Amino acid sequence.
+
+        Returns
+        -------
+        str
+            DNA sequence.
+        """
+        candidates = self._get_seq_candidates(seq_aa)
+        if self.strategy == "max":
+            return "".join(
+                candidates.loc[candidates.groupby("pos")["weights"].idxmax(), "codon"]
+            )
+        if self.strategy == "min":
+            return "".join(
+                candidates.loc[candidates.groupby("pos")["weights"].idxmin(), "codon"]
+            )
+        # 'balanced'
+        return "".join(
+            candidates.groupby("pos").apply(
+                lambda df: df.sample(n=1, weights="weights")
+            )["codon"]
+        )
+
+
+def _deprecated_optimizer(strategy, old_name):
+    warnings.warn(
+        f"{old_name} is deprecated; use WeightOptimizer(strategy={strategy!r}) "
+        "instead. Will be removed in v0.6.0.",
+        FutureWarning,
+        stacklevel=3,
+    )
 
 
 class MaxWeight(WeightOptimizer):
-    """
-    Optimizes the amino acid sequence by selecting synonymous codons with
-    the highest weights.
+    """Deprecated. Use ``WeightOptimizer(strategy='max')``."""
 
-    Parameters
-    ----------
-    weights : pd.Series, optional
-        Codon weights, according to which optimization will encode the
-        sequence, by default None
-    model : scores.ScalarScore, optional
-        Codon model object with a `weights` property, by default None
-    higher_is_better : bool, optional
-        Defines the direction of the weights for the optimization, by
-        default True
-    genetic_code : int, optional
-        NCBI genetic code ID, by default 1
-    """
-
-    def optimize(self, seq_aa):
-        weights = self._get_seq_candidates(seq_aa)
-        return "".join(weights.loc[weights.groupby("pos")["weights"].idxmax(), "codon"])
+    def __init__(self, **kwargs):
+        _deprecated_optimizer("max", "MaxWeight")
+        super().__init__(strategy="max", **kwargs)
 
 
 class MinWeight(WeightOptimizer):
-    """
-    Optimizes the amino acid sequence by selecting synonymous codons with
-    the lowest weights.
+    """Deprecated. Use ``WeightOptimizer(strategy='min')``."""
 
-    Parameters
-    ----------
-    weights : pd.Series, optional
-        Codon weights, according to which optimization will encode the
-        sequence, by default None
-    model : scores.ScalarScore, optional
-        Codon model object with a `weights` property, by default None
-    higher_is_better : bool, optional
-        Defines the direction of the weights for the optimization, by
-        default True
-    genetic_code : int, optional
-        NCBI genetic code ID, by default 1
-    """
-
-    def optimize(self, seq_aa):
-        weights = self._get_seq_candidates(seq_aa)
-        return "".join(weights.loc[weights.groupby("pos")["weights"].idxmin(), "codon"])
+    def __init__(self, **kwargs):
+        _deprecated_optimizer("min", "MinWeight")
+        super().__init__(strategy="min", **kwargs)
 
 
 class BalancedWeight(WeightOptimizer):
-    """
-    Optimizes the amino acid sequence by selecting synonymous codons with
-    a probability proportional to their weight. This generates a balanced
-    codon distribution, with more optimal codons appearing at higher
-    frequencies.
+    """Deprecated. Use ``WeightOptimizer(strategy='balanced')``."""
 
-    Parameters
-    ----------
-    weights : pd.Series, optional
-        Codon weights, according to which optimization will encode the
-        sequence, by default None
-    model : scores.ScalarScore, optional
-        Codon model object with a `weights` property, by default None
-    higher_is_better : bool, optional
-        Defines the direction of the weights for the optimization, by
-        default True
-    genetic_code : int, optional
-        NCBI genetic code ID, by default 1
-    """
-
-    def optimize(self, seq_aa):
-        weights = self._get_seq_candidates(seq_aa)
-        return "".join(
-            weights.groupby("pos").apply(lambda df: df.sample(n=1, weights="weights"))[
-                "codon"
-            ]
-        )
+    def __init__(self, **kwargs):
+        _deprecated_optimizer("balanced", "BalancedWeight")
+        super().__init__(strategy="balanced", **kwargs)
