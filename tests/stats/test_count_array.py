@@ -1,4 +1,4 @@
-"""Equivalence tests for CodonCounter._count_single.
+"""Equivalence tests for CodonCounter.count_array.
 
 Compares the vectorised implementation against an inline reference that
 reproduces the pre-vectorisation Python loop. Covers edge cases around
@@ -12,18 +12,18 @@ import pytest
 from codonbias.stats import CodonCounter
 
 
-def _reference_count_single(counter, seq):
+def _reference_count_array(counter, seq):
     """Pre-vectorisation implementation, inlined here as the reference."""
     if not isinstance(seq, str):
         raise ValueError(f"sequence is not a string: {type(seq)}")
     seq = seq.upper().replace("U", "T")
-    counts = np.zeros(len(counter._codon_to_idx), dtype=float)
+    codon_to_idx = {c: i for i, c in enumerate(counter.codon_index)}
+    counts = np.zeros(len(codon_to_idx), dtype=float)
     for i in range(0, len(seq) - 2, 3):
-        idx = counter._codon_to_idx.get(seq[i : i + 3])
+        idx = codon_to_idx.get(seq[i : i + 3])
         if idx is not None:
             counts[idx] += 1
-    aa_counts = np.bincount(counter._aa_group, weights=counts, minlength=counter._n_aa)
-    return counts, aa_counts
+    return counts
 
 
 SEQS = {
@@ -49,45 +49,51 @@ SEQS = {
 
 @pytest.mark.parametrize("name,seq", list(SEQS.items()))
 @pytest.mark.parametrize("ignore_stop", [True, False])
-def test_count_single_equivalence_genetic_code_1(name, seq, ignore_stop):
+def test_count_array_equivalence_genetic_code_1(name, seq, ignore_stop):
     counter = CodonCounter(ignore_stop=ignore_stop)
 
-    new_counts, new_aa = counter._count_single(seq)
-    ref_counts, ref_aa = _reference_count_single(counter, seq)
+    new_counts = counter.count_array(seq)
+    ref_counts = _reference_count_array(counter, seq)
 
     np.testing.assert_array_equal(
         new_counts, ref_counts, err_msg=f"counts mismatch on {name}"
     )
-    np.testing.assert_array_equal(
-        new_aa, ref_aa, err_msg=f"aa_counts mismatch on {name}"
-    )
 
 
 @pytest.mark.parametrize("genetic_code", [2, 11])
-def test_count_single_equivalence_other_genetic_codes(genetic_code):
+def test_count_array_equivalence_other_genetic_codes(genetic_code):
     """Non-standard genetic codes have different STOP sets — confirm the
-    LUT population respects the code-specific _idx_to_codon."""
+    LUT population respects the code-specific codon_index."""
     counter = CodonCounter(genetic_code=genetic_code, ignore_stop=True)
     seq = "ATGAAACCCGGGTTTTGATAATAGCTG"  # includes TGA / TAA / TAG
-    new_counts, new_aa = counter._count_single(seq)
-    ref_counts, ref_aa = _reference_count_single(counter, seq)
+    new_counts = counter.count_array(seq)
+    ref_counts = _reference_count_array(counter, seq)
     np.testing.assert_array_equal(new_counts, ref_counts)
-    np.testing.assert_array_equal(new_aa, ref_aa)
 
 
-def test_count_single_rejects_non_string():
+def test_count_array_rejects_non_string():
     counter = CodonCounter()
     with pytest.raises(ValueError, match="sequence is not a string"):
-        counter._count_single(12345)
+        counter.count_array(12345)
 
 
-def test_count_single_return_shape_and_dtype():
-    """Contract: (counts, aa_counts) tuple, float arrays, correct shapes."""
+def test_count_array_rejects_non_kmer_1():
+    counter = CodonCounter(k_mer=2)
+    with pytest.raises(NotImplementedError, match="k_mer=1"):
+        counter.count_array("ATGAAA")
+
+
+def test_count_array_does_not_mutate_state():
+    """count_array is stateless; self.counts must remain unset."""
+    counter = CodonCounter()
+    counter.count_array("ATGAAACCCGGG")
+    assert not hasattr(counter, "counts")
+
+
+def test_count_array_return_shape_and_dtype():
+    """Contract: float ndarray of shape (len(codon_index),)."""
     counter = CodonCounter()  # default: genetic_code=1, ignore_stop=True
-    counts, aa_counts = counter._count_single("ATGAAACCCGGG")
+    counts = counter.count_array("ATGAAACCCGGG")
     assert isinstance(counts, np.ndarray)
-    assert isinstance(aa_counts, np.ndarray)
     assert counts.dtype.kind == "f"
-    assert aa_counts.dtype.kind == "f"
-    assert counts.shape == (len(counter._idx_to_codon),)
-    assert aa_counts.shape == (counter._n_aa,)
+    assert counts.shape == (len(counter.codon_index),)

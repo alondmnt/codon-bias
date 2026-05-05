@@ -83,12 +83,6 @@ class CodonCounter(object):
         self._aa_to_idx = {aa: i for i, aa in enumerate(unique_aa)}
         self.aa_group = np.array([self._aa_to_idx[aa] for aa in code["aa"]])
 
-        # Transit aliases for the renamed attrs. Removed once all callers
-        # migrate to the public names.
-        self._idx_to_codon = self.codon_index
-        self._n_aa = self.n_aa
-        self._aa_group = self.aa_group
-
         # Base-5 packed codon LUT for the vectorised k_mer=1 path. Codon
         # ids are packed b0*25 + b1*5 + b2 so sentinel-containing triplets
         # never collide with valid ACGT triplets.
@@ -163,40 +157,26 @@ class CodonCounter(object):
         return self
 
     def _count(self, seqs):
+        if self.k_mer == 1:
+            if isinstance(seqs, str):
+                return self.count_array(seqs)
+            if isinstance(seqs, (list, np.ndarray)):
+                counts = np.column_stack([self.count_array(s) for s in seqs])
+                return counts.sum(axis=1) if self.sum_seqs else counts
+            raise ValueError(f"unknown sequence type: {type(seqs)}")
+
+        # k_mer > 1: pandas/Counter fallback
         if isinstance(seqs, str):
-            res = self._count_single(seqs)
-            return (
-                res[0] if self.k_mer == 1 else res
-            )  # Return only count array for k_mer=1
-        elif isinstance(seqs, (list, np.ndarray)):
-            if self.k_mer == 1:
-                counts = np.column_stack([self._count_single(s)[0] for s in seqs])
-            else:
-                counts = pd.concat(
-                    [self._count_single(s) for s in seqs], axis=1
-                ).fillna(0)
+            return self._count_kmer_n(seqs)
+        if isinstance(seqs, (list, np.ndarray)):
+            counts = pd.concat([self._count_kmer_n(s) for s in seqs], axis=1).fillna(0)
             return counts.sum(axis=1) if self.sum_seqs else counts
         raise ValueError(f"unknown sequence type: {type(seqs)}")
 
-    def _count_single(self, seq):
+    def _count_kmer_n(self, seq):
         if not isinstance(seq, str):
             raise ValueError(f"sequence is not a string: {type(seq)}")
         seq = seq.upper().replace("U", "T")
-
-        if self.k_mer == 1:
-            b = seq.encode("ascii", errors="replace")
-            n_codons = len(b) // 3
-            arr = np.frombuffer(b[: n_codons * 3], dtype=np.uint8).reshape(n_codons, 3)
-            base_ids = _BASE_LUT[arr]
-            lex_ids = base_ids[:, 0] * 25 + base_ids[:, 1] * 5 + base_ids[:, 2]
-            aa_ids = self._codon_lex_to_aa[lex_ids]
-            valid = aa_ids >= 0
-            counts = np.bincount(aa_ids[valid], minlength=len(self.codon_index)).astype(
-                float
-            )
-            aa_counts = np.bincount(self.aa_group, weights=counts, minlength=self.n_aa)
-            return counts, aa_counts
-
         return pd.Series(
             Counter(iter_codons(seq, k_mer=self.k_mer)),
             dtype=int,
@@ -472,36 +452,31 @@ class BaseCounter(object):
         return self
 
     def _count(self, seqs):
+        if self.k_mer == 1:
+            if isinstance(seqs, str):
+                return self.count_array(seqs)
+            if isinstance(seqs, (list, np.ndarray)):
+                counts = np.column_stack([self.count_array(s) for s in seqs])
+                return counts.sum(axis=1) if self.sum_seqs else counts
+            raise ValueError(f"unknown sequence type: {type(seqs)}")
+
+        # k_mer > 1: pandas/Counter fallback
         if isinstance(seqs, str):
-            return self._count_single(seqs)
-        elif isinstance(seqs, (list, np.ndarray)):
-            if self.k_mer == 1:
-                counts = np.column_stack([self._count_single(s) for s in seqs])
-            else:
-                counts = pd.concat(
-                    [self._count_single(s) for s in seqs], axis=1
-                ).fillna(0)
+            return self._count_kmer_n(seqs)
+        if isinstance(seqs, (list, np.ndarray)):
+            counts = pd.concat([self._count_kmer_n(s) for s in seqs], axis=1).fillna(0)
             return counts.sum(axis=1) if self.sum_seqs else counts
         raise ValueError(f"unknown sequence type: {type(seqs)}")
 
-    def _count_single(self, seq):
+    def _count_kmer_n(self, seq):
         if not isinstance(seq, str):
             raise ValueError(f"sequence is not a string: {type(seq)}")
         seq = seq.upper().replace("U", "T")
-
-        if self.k_mer == 1:
-            b = seq.encode("ascii", errors="replace")
-            arr = np.frombuffer(b, dtype=np.uint8)[self.frame - 1 :: self.step]
-            base_ids = _BASE_LUT[arr]
-            return np.bincount(base_ids[base_ids < 4], minlength=4)
-
         last_pos = len(seq) - self.k_mer + 1
         return pd.Series(
             Counter(
-                [
-                    seq[i : i + self.k_mer]
-                    for i in range(self.frame - 1, last_pos, self.step)
-                ]
+                seq[i : i + self.k_mer]
+                for i in range(self.frame - 1, last_pos, self.step)
             ),
             dtype=int,
         )
