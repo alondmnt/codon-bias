@@ -76,7 +76,13 @@ def test_calc_bnc_equivalence(name, seq):
 
 @pytest.mark.parametrize("name,seq", list(SEQS.items()))
 def test_calc_bcc_equivalence(name, seq):
-    """Vectorised _calc_BCC matches the listcomp reference end-to-end."""
+    """Vectorised _calc_BCC matches the listcomp reference end-to-end.
+
+    The reference still produces the full 64-codon Series (lex order,
+    normalised over all 64). _calc_BCC now returns an ndarray subset to
+    `counter.codon_index` order, with the same denominator. Compare by
+    reindexing the reference onto `counter.codon_index`.
+    """
     rcb = RelativeCodonBiasScore()
     got = rcb._calc_BCC(rcb._calc_BNC(seq))
 
@@ -89,23 +95,24 @@ def test_calc_bcc_equivalence(name, seq):
         pytest.skip("singular per-position distribution — reference produces NaN")
 
     np.testing.assert_allclose(
-        got.values,
-        expected.reindex(got.index).values,
+        got,
+        expected.reindex(rcb.counter.codon_index).values,
         rtol=1e-12,
         err_msg=f"BCC mismatch on {name}",
     )
 
 
 def test_calc_bcc_return_shape():
-    """Contract: BCC is a Series indexed by 64 lex-ordered ACGT codons,
-    summing to 1 (when non-degenerate)."""
+    """Contract: BCC is an ndarray in `counter.codon_index` order; values
+    are read from a 64-codon normalisation but subset to the active
+    codon set, so they do not sum to 1 in general."""
     rcb = RelativeCodonBiasScore()
     BNC = rcb._calc_BNC("ATGAAACCCGGGTTTTAA" * 10)
     bcc = rcb._calc_BCC(BNC)
-    assert isinstance(bcc, pd.Series)
-    assert len(bcc) == 64
-    assert bcc.index[0] == "AAA" and bcc.index[-1] == "TTT"
-    np.testing.assert_allclose(bcc.sum(), 1.0, rtol=1e-12)
+    assert isinstance(bcc, np.ndarray)
+    assert bcc.shape == (len(rcb.counter.codon_index),)
+    # All-positive (BNC is positive everywhere on this seq).
+    assert (bcc > 0).all()
 
 
 def test_get_score_end_to_end_matches_prior_values():

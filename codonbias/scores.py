@@ -1149,49 +1149,67 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
         # Per-codon base indices for the vectorised _calc_BCC path. Row i
         # holds [b0, b1, b2] for codon i; column j is the base at position j.
         # Shape (64, 3) int8 = 192 B for any genetic code.
-        codons = ["".join(c) for c in product("ACGT", "ACGT", "ACGT")]
+        all_codons = ["".join(c) for c in product("ACGT", "ACGT", "ACGT")]
         base_to_idx = {"A": 0, "C": 1, "G": 2, "T": 3}
         self._codon_pos_idx = np.array(
-            [[base_to_idx[b] for b in cod] for cod in codons],
+            [[base_to_idx[b] for b in cod] for cod in all_codons],
             dtype=np.int8,
         )
-        self._bcc_index = pd.Index(codons, name="codon")
+        self._bcc_index = pd.Index(all_codons, name="codon")
+        # Map from counter.codon_index (length 61 by default) into the
+        # 64-codon BCC array, so BCC values can be subset to the active
+        # codon set after normalising over all 64. Preserves the prior
+        # numerical contract (BCC normalised over all 64 codons; STOPs
+        # contribute to the denominator but are never read).
+        codon_to_64idx = {c: i for i, c in enumerate(all_codons)}
+        self._bcc_idx_map = np.array(
+            [codon_to_64idx[c] for c in self.counter.codon_index], dtype=np.int32
+        )
         # Reused on every _calc_BNC call to skip BaseCounter's pandas
         # scaffolding. Same reach-through pattern ENC._calc_BNC uses.
         self._base_counter = BaseCounter()
 
     def _calc_score(self, seq):
         D, counts = self._weights_and_counts(seq)
-
         if self.mean == "geometric":
-            return geomean(np.log(D), counts) - 1
-        elif self.mean == "arithmetic":
-            return mean(D, counts)
-        else:
-            raise ValueError(f"unknown mean: {self.mean}")
+            log_D = np.log(D)
+            valid = np.isfinite(log_D)
+            return (
+                np.exp((log_D[valid] * counts[valid]).sum() / counts[valid].sum()) - 1
+            )
+        if self.mean == "arithmetic":
+            valid = np.isfinite(D)
+            return (D[valid] * counts[valid]).sum() / counts[valid].sum()
+        raise ValueError(f"unknown mean: {self.mean}")
 
     def _calc_vector(self, seq):
-        D = self._calc_seq_weights(seq)
-
-        return D.reindex(self._get_codon_vector(seq)).values
+        D, _ = self._weights_and_counts(seq)
+        return (
+            pd.Series(D, index=self.counter.codon_index)
+            .reindex(self._get_codon_vector(seq))
+            .values
+        )
 
     def _calc_seq_weights(self, seq):
         D, _ = self._weights_and_counts(seq)
-        return D
+        # Public Series indexed by all 64 codons (lex order, NaN at codons
+        # outside the active set). Preserves the prior pandas-alignment
+        # shape so external callers see no change.
+        full = pd.Series(np.nan, index=self._bcc_index, name="weights")
+        full.iloc[self._bcc_idx_map] = D
+        return full
 
     def _weights_and_counts(self, seq):
-        counter = self.counter.count(seq)
-        # background probabilities
+        """Stateless. Returns (D, counts) as ndarrays in codon_index order."""
+        counts = self.counter.count_array(seq)
+        counts_pc = counts + self.pseudocount
+        P = counts_pc / counts_pc.sum()
         BCC = self._calc_BCC(self._calc_BNC(seq))
-        # observed probabilities
-        P = counter.get_codon_table(normed=True, pseudocount=self.pseudocount)
-        # codon weights
         if self.directional:
             D = np.maximum(P / BCC, BCC / P)
         else:
             D = P / BCC
-
-        return D, counter.counts
+        return D, counts
 
     def _calc_BNC(self, seq):
         """Compute the per-position background nucleotide composition.
@@ -1209,15 +1227,18 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
     def _calc_BCC(self, BNC):
         """Compute the background CODON composition of the sequence.
 
-        Position-aware product: for codon (b0, b1, b2),
-            BCC[cod] ∝ BNC[b0, 0] * BNC[b1, 1] * BNC[b2, 2]
-        then normalised to sum to 1. Equivalent to the previous
-        Series-indexed listcomp; preserves the raw-counts-then-normalise
-        semantics (no per-position pseudocount).
+        Position-aware product over all 64 codons, normalised over all 64
+        (preserving the prior denominator), then subset to the active
+        codon set in `counter.codon_index` order.
+
+        Returns
+        -------
+        numpy.ndarray
+            BCC in `counter.codon_index` order.
         """
-        bcc = BNC[self._codon_pos_idx, np.arange(3)].prod(axis=1).astype(float)
-        bcc /= bcc.sum()
-        return pd.Series(bcc, index=self._bcc_index)
+        bcc_full = BNC[self._codon_pos_idx, np.arange(3)].prod(axis=1).astype(float)
+        bcc_full /= bcc_full.sum()
+        return bcc_full[self._bcc_idx_map]
 
 
 class NormalizedTranslationalEfficiency(ScalarScore, VectorScore):
