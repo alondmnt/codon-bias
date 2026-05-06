@@ -103,6 +103,31 @@ def geomean(log_weights, counts):
     )
 
 
+def geomean_array(log_weights, counts):
+    """
+    Count-weighted geometric mean over aligned ndarray inputs.
+
+    Fast-path sibling of `geomean` for the k_mer=1 scoring path. Both
+    arrays must be aligned to the same codon order (typically
+    `counter.codon_index`); non-finite entries in `log_weights` are
+    masked out before the reduction.
+
+    Parameters
+    ----------
+    log_weights : numpy.ndarray
+        Codon scores in logarithmic scale, aligned to a fixed codon order.
+    counts : numpy.ndarray
+        Codon counts, aligned to the same codon order as `log_weights`.
+
+    Returns
+    -------
+    float
+        Geometric mean.
+    """
+    mask = np.isfinite(log_weights)
+    return np.exp((log_weights[mask] * counts[mask]).sum() / counts[mask].sum())
+
+
 def mean(weights, counts):
     """
     Compute the arithmetic mean based on codon scores given in

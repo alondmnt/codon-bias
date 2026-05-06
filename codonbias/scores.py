@@ -9,6 +9,7 @@ from .stats import BaseCounter, CodonCounter
 from .utils import (
     fetch_GCN_from_GtRNAdb,
     geomean,
+    geomean_array,
     iter_codons,
     mean,
     reverse_complement,
@@ -451,10 +452,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
     def _calc_score(self, seq):
         if self.k_mer == 1:
             counts = self.counter.count_array(seq)
-            mask = np.isfinite(self._log_weights_arr)
-            return np.exp(
-                (self._log_weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()
-            )
+            return geomean_array(self._log_weights_arr, counts)
         counts = self.counter.count(seq).counts
         return geomean(self.log_weights, counts)
 
@@ -927,10 +925,7 @@ class TrnaAdaptationIndex(ScalarScore, VectorScore):
 
     def _calc_score(self, seq):
         counts = self.counter.count_array(seq)
-        mask = np.isfinite(self._log_weights_arr)
-        return np.exp(
-            (self._log_weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()
-        )
+        return geomean_array(self._log_weights_arr, counts)
 
     def _calc_vector(self, seq):
         return self.weights.reindex(self._get_codon_vector(seq)).values
@@ -1322,10 +1317,7 @@ class NormalizedTranslationalEfficiency(ScalarScore, VectorScore):
 
     def _calc_score(self, seq):
         counts = self.counter.count_array(seq)
-        mask = np.isfinite(self._log_weights_arr)
-        return np.exp(
-            (self._log_weights_arr[mask] * counts[mask]).sum() / counts[mask].sum()
-        )
+        return geomean_array(self._log_weights_arr, counts)
 
     def _calc_vector(self, seq):
         return self.weights.reindex(self._get_codon_vector(seq)).values
