@@ -21,20 +21,37 @@ for _b, _i in zip(b"ACGT", range(4)):
 class CodonCounter(object):
     """
     Codon statistics for a single, or multiple DNA sequences.
-    When the `k_mer` argument is provided, the counter will return
-    codon pairs (k_mer=2), codon triplets (k_mer=3) statistics, etc.
+    When the `k_mer` argument is provided, the counter will return codon
+    pairs (k_mer=2) or codon triplets (k_mer=3) statistics. Higher k_mer
+    values are not supported: a dense aligned output would exceed 14M
+    entries per call.
+
+    The counter exposes a vectorised entry point ``count_array(seq)``
+    that returns a stateless ndarray aligned to ``kmer_index``, and a
+    formatting wrapper ``count(seqs)`` that wraps the result as a
+    pandas Series/DataFrame indexed by the lex-product codon order.
+    Public LUTs (``codon_index``, ``aa_group``, ``n_aa``,
+    ``codon_base_idx``, plus their ``kmer_index`` / ``aa_group_kmer`` /
+    ``codon_base_idx_kmer`` k-mer extensions) are available for
+    downstream score classes that build their own aligned ndarrays.
 
     Parameters
     ----------
     seqs : str, or iterable of str, optional
         DNA sequence, or an iterable of ones. by default None
     k_mer : int, optional
-        Determines the length of the k-mer to base statistics on, by
-        default 1
+        Determines the length of the k-mer to base statistics on, in
+        [1, 3]. by default 1
     sum_seqs : bool, optional
         Determines how multiple sequences will be handled. When True,
         their statistics will be summed, otherwise separate statistics
         will be kept in a table. by default True
+    concat_index : bool, optional
+        For k_mer>1, controls how the k-mer index is presented by
+        ``count`` / ``get_codon_table`` / ``get_aa_table``: True returns
+        concat-string indices (e.g., ``'AAAAAA'``), False returns a
+        MultiIndex split into per-position codon levels. by default
+        True
     genetic_code : int, optional
         NCBI genetic code ID, by default 1
     ignore_stop : bool, optional
