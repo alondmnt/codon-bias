@@ -551,182 +551,115 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
             k_mer=k_mer, concat_index=True, genetic_code=genetic_code, ignore_stop=True
         )  # score is not defined for STOP codons
 
-        self.template = self.counter.count("").get_aa_table().to_frame()
-        self.aa_deg = self.template.groupby("aa").size()
-
-        if self.k_mer == 1:
-            self._aa_deg = np.bincount(
-                self.counter.aa_group, minlength=self.counter.n_aa
-            )
-            self._bcc_uniform = 1.0 / self._aa_deg[self.counter.aa_group]
-            # Reused on every bg_correction=True sequence to skip the
-            # pd.Series wrapping of BaseCounter.count()/get_table().
-            self._base_counter = BaseCounter()
+        # Per-(k-mer aa-tuple) degeneracy: how many k-mer codons map to
+        # each aa-tuple group. For k_mer=1 this is the textbook aa
+        # degeneracy; for k_mer>1 it's the cartesian product (e.g.,
+        # Met-Ile -> 1*3 = 3).
+        aa_group_kmer = self.counter.aa_group_kmer
+        n_aa_kmer = self.counter.n_aa**self.k_mer
+        self._aa_deg = np.bincount(aa_group_kmer, minlength=n_aa_kmer)
+        self._bcc_uniform = 1.0 / self._aa_deg[aa_group_kmer]
+        # Shared BaseCounter for bg_correction=True; sized to k_mer=1 since
+        # _calc_BNC works on individual nucleotides regardless of k_mer.
+        self._base_counter = BaseCounter()
 
         self.BCC_unif = self._calc_BCC(self._calc_BNC(""))
 
     def _calc_seq_weights(self, seq, background=None):
-        if self.k_mer == 1:
-            return 1 / self._calc_F(seq, background=background)[0]
-        else:
-            return 1 / self._calc_F(seq, background=background)[0]["F"]
+        return 1 / self._calc_F(seq, background=background)[0]
 
     def _calc_score(self, seq, background=None):
-        if self.k_mer == 1:
-            return self._calc_score_single_kmer(seq, background)
-
         F, P, N = self._calc_F(seq, background=background)
-        F["deg"] = self.aa_deg
-        F["N"] = N
-        deg_count = F.groupby("deg").size().to_frame("deg_count")
 
-        F = F.loc[(N > 1) & (F["F"] > 1e-6) & np.isfinite(F["F"])]
-        if self.mean == "unweighted":
-            F = F.groupby("deg", group_keys=False).mean().join(deg_count, how="right")
-        elif self.mean == "weighted":
-            F["F"] = F["F"] * F["N"]
-            F = F.groupby("deg")["F"].sum() / F.groupby("deg")["N"].sum()
-            F = F.to_frame("F").join(deg_count, how="right")
-        else:
-            raise ValueError(f'unknown mean="{self.mean}"')
-
-        miss_3 = np.isnan(F.loc[3, "F"])
-        F["F"] = F["F"].fillna(1 / F.index.to_series())  # use 1/deg
-        if miss_3:
-            F.loc[3, "F"] = 0.5 * (F.loc[2, "F"] + F.loc[4, "F"])
-
-        ENC = (F["deg_count"] / F["F"]).sum()
-        return min([len(P), ENC]) ** (1 / self.k_mer)
-
-    def _calc_score_single_kmer(self, seq, background=None):
-        F, P, N = self._calc_F_single_kmer(seq, background)
-        F_by_deg = {}
+        # Aggregate F by aa-tuple degeneracy. For k_mer=1 this is the
+        # textbook ENC by-degeneracy mean (Wright/Sun-Yang-Xia); for
+        # k_mer>1 it is the Alexaki-style codon-pair generalisation.
         unique_degs, deg_counts = np.unique(self._aa_deg, return_counts=True)
-
-        for deg in unique_degs:
-            mask = self._aa_deg == deg
-            valid = mask & (N > 1) & (F > 1e-6) & np.isfinite(F)
+        F_by_deg = np.full(len(unique_degs), np.nan)
+        for i, deg in enumerate(unique_degs):
+            in_group = self._aa_deg == deg
+            valid = in_group & (N > 1) & (F > 1e-6) & np.isfinite(F)
+            if not valid.any():
+                continue
             if self.mean == "unweighted":
-                F_by_deg[deg] = F[valid].mean() if valid.any() else np.nan
+                F_by_deg[i] = F[valid].mean()
             elif self.mean == "weighted":
                 sum_N = N[valid].sum()
-                F_by_deg[deg] = (
-                    (F[valid] * N[valid]).sum() / sum_N if sum_N > 0 else np.nan
-                )
+                if sum_N > 0:
+                    F_by_deg[i] = (F[valid] * N[valid]).sum() / sum_N
             else:
                 raise ValueError(f'unknown mean="{self.mean}"')
 
-        miss_3 = np.isnan(F_by_deg.get(3, np.nan))
-        for deg in unique_degs:
-            if np.isnan(F_by_deg[deg]):
-                F_by_deg[deg] = 1.0 / deg
+        # Wright/Alexaki imputation: missing aa-degeneracies fall back to
+        # 1/deg, with deg=3 specifically interpolated between 2 and 4 if
+        # absent (Wright 1990, applied uniformly across k_mer).
+        is_3 = unique_degs == 3
+        miss_3 = is_3.any() and np.isnan(F_by_deg[is_3]).any()
+        nan_mask = np.isnan(F_by_deg)
+        F_by_deg[nan_mask] = 1.0 / unique_degs[nan_mask]
         if miss_3:
-            F_by_deg[3] = 0.5 * (F_by_deg.get(2, 0.5) + F_by_deg.get(4, 0.25))
+            f2 = F_by_deg[unique_degs == 2]
+            f4 = F_by_deg[unique_degs == 4]
+            if len(f2) and len(f4):
+                F_by_deg[is_3] = 0.5 * (f2 + f4)
 
-        ENC = sum(count / F_by_deg[deg] for deg, count in zip(unique_degs, deg_counts))
-        return min(len(P), ENC)
+        ENC = (deg_counts / F_by_deg).sum()
+        return min(len(P), ENC) ** (1.0 / self.k_mer)
 
     def _calc_F(self, seq, background=None):
-        if self.k_mer == 1:
-            return self._calc_F_single_kmer(seq, background)
+        """Per-(aa-tuple) F-values, P (per-k-mer relative freq), N (per-aa-tuple totals).
 
-        counts = self.counter.count(seq).get_aa_table()
-        counts += self.pseudocount  # Sun, Yang & Xia 2013
-        N = counts.groupby("aa").sum()
-        P = counts / N
-
-        if background is None:
-            background = seq
-        if self.bg_correction:
-            BCC = self._calc_BCC(self._calc_BNC(background))
-        else:
-            BCC = self.BCC_unif
-
-        if not self.robust:
-            chi2 = N * ((P - BCC) ** 2 / BCC).groupby("aa").sum()  # Novembre 2002
-            F = ((chi2 + N - self.aa_deg) / (N - 1) / self.aa_deg).to_frame("F")
-        else:
-            chi2 = ((P - BCC) ** 2 / BCC).groupby("aa").sum()  # modified Novembre 2002
-            F = ((chi2 + 1) / self.aa_deg).to_frame("F")
-            # converges to Sun, Yang & Xia for BCC_unif, i.e., sum(p**2)
-        return F, P, N
-
-    def _calc_F_single_kmer(self, seq, background=None):
+        F: shape (n_aa**k_mer,) -- codon-tuple homozygosity per aa-tuple.
+        P: shape (n_codons**k_mer,) -- relative freq of each k-mer w.r.t. its aa-tuple.
+        N: shape (n_aa**k_mer,) -- total counts per aa-tuple.
         """
-        Returns a tuple of 3 np.arrays
-        F: 1D array of shape (n_aa,) representing codon homozygosity
-        P: 1D array of shape (n_codons,) representing relative frequency of each codon w.r.t its group
-        N: 1D array of shape (n_aa,) containing the total absolute counts of each AA observed in the sequence
-        """
-        counts = self.counter.count_array(seq) + self.pseudocount
-        aa_group = self.counter.aa_group
+        counts = (
+            self.counter.count_array(seq) + self.pseudocount
+        )  # Sun, Yang & Xia 2013
+        aa_group = self.counter.aa_group_kmer
+        n_aa_kmer = self._aa_deg.size
 
-        N = np.bincount(aa_group, weights=counts, minlength=self.counter.n_aa)
-
-        # Safely divide, leaving NaN where N is 0
+        N = np.bincount(aa_group, weights=counts, minlength=n_aa_kmer)
         with np.errstate(divide="ignore", invalid="ignore"):
             P = counts / N[aa_group]
 
         if background is None:
             background = seq
         BCC = (
-            self._calc_BCC(self._calc_BNC(background)).values
+            self._calc_BCC(self._calc_BNC(background))
             if self.bg_correction
             else self._bcc_uniform
         )
 
-        # Safely compute chi2
         with np.errstate(divide="ignore", invalid="ignore"):
             chi2 = (P - BCC) ** 2 / BCC
+        # Mimic pandas' NaN-skipping sum: drop NaN entries before bincount.
+        valid = ~np.isnan(chi2)
+        chi2_aa = np.bincount(aa_group[valid], weights=chi2[valid], minlength=n_aa_kmer)
 
-        # Pandas .sum() ignores NaNs by default. We mimic this by masking NaNs before bincount.
-        valid_chi2 = ~np.isnan(chi2)
-        chi2_aa = np.bincount(
-            aa_group[valid_chi2], weights=chi2[valid_chi2], minlength=self.counter.n_aa
-        )
-
-        if not self.robust:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                F = (N * chi2_aa + N - self._aa_deg) / (N - 1) / self._aa_deg
+        if self.robust:
+            F = (chi2_aa + 1) / self._aa_deg  # Sun, Yang & Xia 2013 (modified Novembre)
         else:
-            F = (chi2_aa + 1) / self._aa_deg
-
+            with np.errstate(divide="ignore", invalid="ignore"):
+                F = (
+                    (N * chi2_aa + N - self._aa_deg) / (N - 1) / self._aa_deg
+                )  # Novembre 2002
         return F, P, N
 
     def _calc_BNC(self, seq):
-        """Compute the background NUCLEOTIDE composition of the sequence.
-
-        k_mer=1 returns an ndarray in ACGT order; k_mer>1 returns a
-        pd.Series (legacy fallback used by the k_mer>1 _calc_BCC path).
-        """
-        if self.k_mer == 1:
-            counts = self._base_counter.count_array(seq).astype(float) + 1
-            counts /= counts.sum()
-            return counts
-        return BaseCounter(seq).get_table(normed=True)
+        """Background nucleotide composition: shape (4,), ACGT order, normalised."""
+        counts = self._base_counter.count_array(seq).astype(float) + 1
+        return counts / counts.sum()
 
     def _calc_BCC(self, BNC):
-        """Compute the background CODON composition of the sequence."""
-        if self.k_mer == 1:
-            # BNC is an ndarray in ACGT order from _calc_BNC's k_mer=1 path.
-            bcc = BNC[self.counter.codon_base_idx].prod(axis=1)
-            aa_sums = np.bincount(
-                self.counter.aa_group,
-                weights=bcc,
-                minlength=self.counter.n_aa,
-            )
-            bcc = bcc / aa_sums[self.counter.aa_group]
-            return pd.Series(bcc, index=self.template.index, name="bcc")
-
-        BCC = self.template.copy()
-        BCC["bcc"] = [
-            np.prod([BNC[c] for c in cod])
-            for cod in BCC.index.get_level_values("codon")
-        ]
-        BCC = BCC["bcc"]
-        BCC /= BCC.groupby("aa").sum()
-
-        return BCC
+        """Background k-mer composition: independent product of base probs,
+        renormalised within each aa-tuple group. Shape (n_codons**k_mer,).
+        """
+        bcc = BNC[self.counter.codon_base_idx_kmer].prod(axis=1)
+        aa_sums = np.bincount(
+            self.counter.aa_group_kmer, weights=bcc, minlength=self._aa_deg.size
+        )
+        return bcc / aa_sums[self.counter.aa_group_kmer]
 
 
 class TrnaAdaptationIndex(ScalarScore, VectorScore):

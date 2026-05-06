@@ -1,7 +1,8 @@
-"""Contract tests for CodonCounter.codon_base_idx.
+"""Contract tests for CodonCounter.codon_base_idx (and its k-mer extension).
 
 The LUT is shared by ENC and RCB to compute per-codon background
-compositions. Lock in shape, dtype, ordering, and the k_mer=1 guard.
+compositions. Lock in shape, dtype, ordering. ``codon_base_idx_kmer``
+is the lazy k-mer extension consumed by ENC k_mer>1.
 """
 
 import numpy as np
@@ -33,8 +34,25 @@ def test_codon_base_idx_non_standard_genetic_codes(genetic_code):
     assert counter.codon_base_idx.shape == (len(counter.codon_index), 3)
 
 
-def test_codon_base_idx_undefined_for_kmer_gt_1():
-    """k_mer>1 paths don't currently need this LUT; attribute must be absent
-    so accidental reach-through fails loudly rather than silently."""
+@pytest.mark.parametrize("k_mer", [1, 2])
+def test_codon_base_idx_defined_for_any_kmer(k_mer):
+    """``codon_base_idx`` is per-codon and shape-stable across k_mer."""
+    counter = CodonCounter(k_mer=k_mer)
+    assert counter.codon_base_idx.shape == (len(counter.codon_index), 3)
+
+
+@pytest.mark.parametrize("k_mer", [1, 2])
+def test_codon_base_idx_kmer_shape(k_mer):
+    counter = CodonCounter(k_mer=k_mer)
+    n_codons = len(counter.codon_index)
+    assert counter.codon_base_idx_kmer.shape == (n_codons**k_mer, 3 * k_mer)
+
+
+def test_codon_base_idx_kmer_matches_kmer_index():
+    """Each row of the k-mer LUT must encode the bases of the corresponding
+    k-mer in ``kmer_index`` order."""
     counter = CodonCounter(k_mer=2)
-    assert not hasattr(counter, "codon_base_idx")
+    base_lut = {"A": 0, "C": 1, "G": 2, "T": 3}
+    lut = counter.codon_base_idx_kmer
+    for i, kmer in enumerate(counter.kmer_index):
+        assert tuple(lut[i].tolist()) == tuple(base_lut[b] for b in kmer)
