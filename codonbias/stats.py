@@ -1,5 +1,4 @@
 import os
-from collections import Counter
 from itertools import product
 
 import numpy as np
@@ -425,10 +424,13 @@ class BaseCounter(object):
             self.count(seqs)
 
     def count_array(self, seq):
-        """Stateless k_mer=1 base count.
+        """Stateless k-mer base count.
 
-        Returns an ndarray of shape ``(4,)`` in ACGT order. Respects
-        ``self.frame`` and ``self.step``. Does not touch ``self.counts``.
+        Returns an ndarray of shape ``(4 ** k_mer,)`` ordered by the lex
+        product of ACGT. Respects ``self.frame`` and ``self.step`` (which
+        select the *starting* positions of each k-mer; the k bases inside
+        each k-mer are always consecutive). K-mers containing any
+        non-ACGT base are dropped. Does not touch ``self.counts``.
 
         Parameters
         ----------
@@ -438,18 +440,33 @@ class BaseCounter(object):
         Returns
         -------
         numpy.ndarray
-            Base counts as int.
+            Base (or base k-mer) counts as int.
         """
-        if self.k_mer != 1:
-            raise NotImplementedError("count_array is currently k_mer=1 only")
         if not isinstance(seq, str):
             raise ValueError(f"sequence is not a string: {type(seq)}")
 
         seq = seq.upper().replace("U", "T")
         b = seq.encode("ascii", errors="replace")
-        arr = np.frombuffer(b, dtype=np.uint8)[self.frame - 1 :: self.step]
+        arr = np.frombuffer(b, dtype=np.uint8)
         base_ids = _BASE_LUT[arr]
-        return np.bincount(base_ids[base_ids < 4], minlength=4)
+
+        k = self.k_mer
+        n_out = 4**k
+        if k == 1:
+            strided = base_ids[self.frame - 1 :: self.step]
+            return np.bincount(strided[strided < 4], minlength=n_out)
+
+        # k_mer > 1: take all consecutive k-grams, then keep starts on the
+        # ``frame``/``step`` grid (matches the original Counter generator
+        # ``range(frame-1, last_pos, step)`` over ``seq[i:i+k]``).
+        if len(base_ids) < k:
+            return np.zeros(n_out, dtype=np.int64)
+        windows = np.lib.stride_tricks.sliding_window_view(base_ids, k)
+        windows = windows[self.frame - 1 :: self.step]
+        valid = (windows < 4).all(axis=1)
+        powers = 4 ** np.arange(k - 1, -1, -1)
+        combined = (windows * powers).sum(axis=1)
+        return np.bincount(combined[valid], minlength=n_out)
 
     def count(self, seqs):
         """
@@ -467,50 +484,35 @@ class BaseCounter(object):
             BaseCounter object (self) with updated counts
         """
         res = self._count(seqs)
-        if self.k_mer == 1:
-            # _count returns ndarray: (4,) for single/sum, (4, N) for multi.
-            index = list("ACGT")
-            self.counts = (
-                pd.Series(res, index=index, name="count")
-                if res.ndim == 1
-                else pd.DataFrame(res, index=index)
-            )
-        else:
-            self.counts = res.reindex(self._init_table()).fillna(0)
-            if self.counts.ndim == 1:
-                self.counts = self.counts.rename("count")
-
+        index = self.kmer_index
+        self.counts = (
+            pd.Series(res, index=index, name="count")
+            if res.ndim == 1
+            else pd.DataFrame(res, index=index)
+        )
         return self
 
     def _count(self, seqs):
-        if self.k_mer == 1:
-            if isinstance(seqs, str):
-                return self.count_array(seqs)
-            if isinstance(seqs, (list, np.ndarray)):
-                counts = np.column_stack([self.count_array(s) for s in seqs])
-                return counts.sum(axis=1) if self.sum_seqs else counts
-            raise ValueError(f"unknown sequence type: {type(seqs)}")
-
-        # k_mer > 1: pandas/Counter fallback
         if isinstance(seqs, str):
-            return self._count_kmer_n(seqs)
+            return self.count_array(seqs)
         if isinstance(seqs, (list, np.ndarray)):
-            counts = pd.concat([self._count_kmer_n(s) for s in seqs], axis=1).fillna(0)
+            counts = np.column_stack([self.count_array(s) for s in seqs])
             return counts.sum(axis=1) if self.sum_seqs else counts
         raise ValueError(f"unknown sequence type: {type(seqs)}")
 
-    def _count_kmer_n(self, seq):
-        if not isinstance(seq, str):
-            raise ValueError(f"sequence is not a string: {type(seq)}")
-        seq = seq.upper().replace("U", "T")
-        last_pos = len(seq) - self.k_mer + 1
-        return pd.Series(
-            Counter(
-                seq[i : i + self.k_mer]
-                for i in range(self.frame - 1, last_pos, self.step)
-            ),
-            dtype=int,
-        )
+    @property
+    def kmer_index(self):
+        """Concat-string index aligned to ``count_array``'s output order.
+
+        For k_mer=1 this is ``['A', 'C', 'G', 'T']``; for k_mer>1 it is
+        the lex product of ACGT joined into k-mer strings (e.g.,
+        ``['AA', 'AC', ..., 'TT']`` for k_mer=2). Built lazily.
+        """
+        if self.k_mer == 1:
+            return list("ACGT")
+        if not hasattr(self, "_kmer_index"):
+            self._kmer_index = ["".join(t) for t in product("ACGT", repeat=self.k_mer)]
+        return self._kmer_index
 
     def get_table(self, normed=False, pseudocount=1):
         """
@@ -541,6 +543,3 @@ class BaseCounter(object):
             return stats / stats.sum()
         else:
             return stats
-
-    def _init_table(self):
-        return ["".join(comb) for comb in list(product(*(self.k_mer * ["ACGT"])))]

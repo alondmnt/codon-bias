@@ -8,10 +8,8 @@ from scipy import optimize, stats
 from .stats import BaseCounter, CodonCounter
 from .utils import (
     fetch_GCN_from_GtRNAdb,
-    geomean,
     geomean_array,
     iter_codons,
-    mean,
     mean_array,
     reverse_complement,
 )
@@ -472,9 +470,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         )
 
         self.log_weights = np.log(self.weights)
-        self._log_weights_arr = self.log_weights.reindex(
-            self.counter.kmer_index
-        ).values
+        self._log_weights_arr = self.log_weights.reindex(self.counter.kmer_index).values
 
 
 class EffectiveNumberOfCodons(ScalarScore, WeightScore):
