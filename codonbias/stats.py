@@ -83,17 +83,18 @@ class CodonCounter(object):
         self._aa_to_idx = {aa: i for i, aa in enumerate(unique_aa)}
         self.aa_group = np.array([self._aa_to_idx[aa] for aa in code["aa"]])
 
-        # Base-5 packed codon LUT for the vectorised k_mer=1 path. Codon
-        # ids are packed b0*25 + b1*5 + b2 so sentinel-containing triplets
-        # never collide with valid ACGT triplets.
-        self._codon_lex_to_aa = np.full(125, -1, dtype=np.int32)
-        for aa_idx, codon in enumerate(self.codon_index):
+        # Base-5 packed codon LUT for the vectorised path. Codon ids are
+        # packed b0*25 + b1*5 + b2 so sentinel-containing triplets never
+        # collide with valid ACGT triplets. Values are indices into
+        # ``codon_index`` (-1 for stops or sentinel-containing triplets).
+        self._codon_lex_to_idx = np.full(125, -1, dtype=np.int32)
+        for codon_idx, codon in enumerate(self.codon_index):
             lex = (
                 25 * "ACGT".index(codon[0])
                 + 5 * "ACGT".index(codon[1])
                 + "ACGT".index(codon[2])
             )
-            self._codon_lex_to_aa[lex] = aa_idx
+            self._codon_lex_to_idx[lex] = codon_idx
 
         # Per-codon base indices (A=0 C=1 G=2 T=3) for callers that need
         # to read background nucleotide compositions. Shape
@@ -133,9 +134,11 @@ class CodonCounter(object):
         arr = np.frombuffer(b[: n_codons * 3], dtype=np.uint8).reshape(n_codons, 3)
         base_ids = _BASE_LUT[arr]
         lex_ids = base_ids[:, 0] * 25 + base_ids[:, 1] * 5 + base_ids[:, 2]
-        aa_ids = self._codon_lex_to_aa[lex_ids]
-        valid = aa_ids >= 0
-        return np.bincount(aa_ids[valid], minlength=len(self.codon_index)).astype(float)
+        codon_ids = self._codon_lex_to_idx[lex_ids]
+        valid = codon_ids >= 0
+        return np.bincount(
+            codon_ids[valid], minlength=len(self.codon_index)
+        ).astype(float)
 
     def count(self, seqs):
         """
