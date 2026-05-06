@@ -82,8 +82,11 @@ class PairwiseScore(object):
         n = len(seqs)
         if self.n_jobs == 1:
             sf = list(starmap(self._calc_matrix_element, zip(*np.triu_indices(n, k=1))))
-        with Pool(self.n_jobs) as pool:
-            sf = pool.starmap(self._calc_matrix_element, zip(*np.triu_indices(n, k=1)))
+        else:
+            with Pool(self.n_jobs) as pool:
+                sf = pool.starmap(
+                    self._calc_matrix_element, zip(*np.triu_indices(n, k=1))
+                )
 
         return squareform(sf)
 
