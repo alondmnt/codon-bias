@@ -1,3 +1,117 @@
+# v0.5.0
+*Unreleased*
+
+if v0.4.0 moved the k_mer=1 hot paths from pandas to numpy, this release
+does the same for k_mer>1. `CodonCounter.count_array` is now a single
+vectorised entry point for any k_mer in [1, 3], and every score routes
+through it on the hot path - including ENC k_mer>1, which was the last
+remaining pandas-Series implementation. `count(seqs)` becomes a thin
+formatter on top.
+
+alongside the perf work, the package consolidates a few subclass-as-config
+patterns into single classes with a kwarg (`WeightOptimizer(strategy=...)`,
+`Permuter(scope=...)`), and promotes a handful of underscore-prefixed
+counter internals (`aa_group`, `codon_base_idx`, `kmer_index`,
+`count_array`) onto the documented public surface that scores depend on.
+
+per-call timings on a 3.6 kb sequence (200 calls, mean):
+
+| score / path                          | before    | after    | speedup |
+|---------------------------------------|----------:|---------:|--------:|
+| ENC k_mer=2, bg_correction=True       | 22.9 ms   | 0.21 ms  |  ~110x  |
+| CAI k_mer=2                           | 0.82 ms   | 0.05 ms  |   ~16x  |
+| RSCU                                  | ~0.22 ms  | 0.016 ms |   ~14x  |
+| `CodonCounter.count(seq).counts` k=2  | 0.15 ms   | 0.04 ms  |  ~3.5x  |
+| RCB                                   | ~0.15 ms  | 0.04 ms  |  ~3.5x  |
+| ENC k_mer=1 (default, bg_correction)  | (vectorised in v0.4.0)        | within noise |
+
+ENC k_mer=2 with `bg_correction=True` was dominated by a python listcomp
+over codon-pair strings (`[np.prod([BNC[c] for c in cod]) for cod in ...]`
+across 3,721 pairs). replacing it with one ndarray lookup
+(`BNC[codon_base_idx_kmer].prod(axis=1)`) is where the ~110x came from.
+
+## performance
+
+- `CodonCounter.count_array` generalised to k_mer in [1, 3] (#27).
+  sliding-window over codon ids, combined into a single bucket id per
+  k-mer, bincounted into a dense aligned ndarray. above k_mer=3 the
+  python `Counter` fallback is retired - dense aligned output would
+  exceed 14M entries; no in-package usage.
+- `CodonCounter.count(seqs)` becomes a thin formatter on top of
+  `count_array` (#27). drops `_count_kmer_n` and `_format_counts`; the
+  k-mer concat-string index is built lazily via the new public
+  `kmer_index` property.
+- CAI and CodonPairBias k_mer>1 wired to `count_array` directly with a
+  precomputed `_log_weights_arr` / `_weights_arr` aligned to the
+  lex-product order (#27). skips the per-call pandas Series wrap +
+  reindex - over half the cost at k_mer=2.
+- RSCU and RCBS rewritten as stateless ndarray calls (#24). per-call
+  paths use `count_array` with weights pre-aligned at init; no longer
+  populate `self.counter.counts` as a side effect.
+- ENC k_mer=1/k_mer>1 implementations unified around `count_array` (#28).
+  the two parallel `_calc_*_single_kmer` / `_calc_*` methods collapse to
+  one body driven by the new `aa_group_kmer` / `codon_base_idx_kmer`
+  LUTs on the counter. `_calc_BCC` for k_mer>1 is now a single ndarray
+  expression instead of a python listcomp over k-mer strings.
+- `BaseCounter.count_array` vectorised for any k_mer (#27). sliding
+  window over base ids respects `frame` / `step` semantics. routes
+  `count(seqs)` through it for uniformity.
+- `geomean_array` / `mean_array` helpers in `utils` for the count_array
+  hot path (#26, #27). aligned-ndarray siblings of the existing
+  `geomean` / `mean` (which still serve the init-time pandas paths).
+
+## refactors
+
+- collapsed `MaxWeight` / `MinWeight` / `BalancedWeight` into a single
+  `WeightOptimizer(strategy="max"|"min"|"balanced")` (#20). old names
+  are FutureWarning shims; will be removed in v0.6.0.
+- collapsed `IntraSeqPermuter` / `IntraPosPermuter` into a single
+  `Permuter(scope="intra_seq"|"intra_pos")` (#23). old names are
+  FutureWarning shims; will be removed in v0.6.0.
+- promoted `CodonCounter` / `BaseCounter` internals to the public
+  surface that scores depend on (#22): `count_array`, `aa_group`,
+  `n_aa`, `codon_index`. then added `codon_base_idx` (#25),
+  `kmer_index`, `aa_group_kmer`, `codon_base_idx_kmer` (#27, #28) as
+  the k-mer extensions. `_codon_lex_to_aa` renamed to
+  `_codon_lex_to_idx` along the way (it stored codon indices, not aa
+  indices - the original name was a misnomer).
+- temporal coupling fixed in `RelativeSynonymousCodonUsage` and
+  `RelativeCodonBiasScore` (#24). `_calc_score` is now self-contained;
+  it no longer relies on a prior `_calc_seq_weights` populating
+  `self.counter.counts` (which broke concurrent use).
+
+## breaking changes
+
+- `CodonCounter` and `BaseCounter` no longer accept `k_mer >= 4` for
+  `count_array` (which now drives `count()` too); the python `Counter`
+  fallback is retired (#27). no in-package score uses k_mer > 2; the
+  documented k-mer support is now [1, 3]. attempts above raise
+  `NotImplementedError` with an explicit message.
+- `MaxWeight` / `MinWeight` / `BalancedWeight` (#20) and
+  `IntraSeqPermuter` / `IntraPosPermuter` (#23) now emit
+  `FutureWarning` on instantiation. behaviour is preserved via shims;
+  the names will be removed in v0.6.0.
+- RSCU, RCBS and CAI no longer populate `self.counter.counts` as a
+  side effect of `get_score`/`get_weights` (#24). callers reading
+  `counter.counts` after a score call should either call
+  `counter.count(seqs)` explicitly or use the score's public weight
+  output.
+
+## tooling
+
+- CI runtime cut from ~13 min to ~3 min (#21). E. coli regression
+  tests subsample to 500 sequences by default (set `ECOLI_FULL=1` to
+  run on the full corpus); python 3.8 dropped from the matrix.
+- RSCU regression baseline added against pre-deep-modules main
+  (commit 2bc54b3). pins the four `(directional, mean)` combinations
+  on the first 500 E. coli sequences (#25).
+- `issue_module_depth.md` (local plan) drove the deepening work
+  through eight candidates; all closed in this release.
+
+**Full Changelog**: https://github.com/alondmnt/codon-bias/compare/v0.4.0...HEAD
+
+---
+
 # [v0.4.0](https://github.com/alondmnt/codon-bias/releases/tag/v0.4.0)
 *Released on 2026-05-02*
 
