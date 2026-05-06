@@ -565,16 +565,6 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         self.aa_deg = self.template.groupby("aa").size()
 
         if self.k_mer == 1:
-            # Per-codon base indices (A=0 C=1 G=2 T=3) for the vectorised
-            # _calc_BCC path. Shape (n_codons, 3), ~183 B for the standard code.
-            base_to_idx = {"A": 0, "C": 1, "G": 2, "T": 3}
-            self._codon_base_idx = np.array(
-                [
-                    [base_to_idx[b] for b in cod]
-                    for cod in self.template.index.get_level_values("codon")
-                ],
-                dtype=np.int8,
-            )
             self._aa_deg = np.bincount(
                 self.counter.aa_group, minlength=self.counter.n_aa
             )
@@ -729,7 +719,7 @@ class EffectiveNumberOfCodons(ScalarScore, WeightScore):
         """Compute the background CODON composition of the sequence."""
         if self.k_mer == 1:
             # BNC is an ndarray in ACGT order from _calc_BNC's k_mer=1 path.
-            bcc = BNC[self._codon_base_idx].prod(axis=1)
+            bcc = BNC[self.counter.codon_base_idx].prod(axis=1)
             aa_sums = np.bincount(
                 self.counter.aa_group,
                 weights=bcc,
@@ -1146,21 +1136,12 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
         self.pseudocount = pseudocount
         self.counter = CodonCounter(genetic_code=genetic_code, ignore_stop=ignore_stop)
 
-        # Per-codon base indices for the vectorised _calc_BCC path. Row i
-        # holds [b0, b1, b2] for codon i; column j is the base at position j.
-        # Shape (64, 3) int8 = 192 B for any genetic code.
+        # 64-codon lex index + map from counter.codon_index into it, used
+        # only by _calc_seq_weights to expose the full 64-codon Series with
+        # NaN at the inactive codon set. _calc_BCC uses counter.codon_base_idx
+        # directly and never materialises the 64-codon array.
         all_codons = ["".join(c) for c in product("ACGT", "ACGT", "ACGT")]
-        base_to_idx = {"A": 0, "C": 1, "G": 2, "T": 3}
-        self._codon_pos_idx = np.array(
-            [[base_to_idx[b] for b in cod] for cod in all_codons],
-            dtype=np.int8,
-        )
         self._bcc_index = pd.Index(all_codons, name="codon")
-        # Map from counter.codon_index (length 61 by default) into the
-        # 64-codon BCC array, so BCC values can be subset to the active
-        # codon set after normalising over all 64. Preserves the prior
-        # numerical contract (BCC normalised over all 64 codons; STOPs
-        # contribute to the denominator but are never read).
         codon_to_64idx = {c: i for i, c in enumerate(all_codons)}
         self._bcc_idx_map = np.array(
             [codon_to_64idx[c] for c in self.counter.codon_index], dtype=np.int32
@@ -1227,18 +1208,22 @@ class RelativeCodonBiasScore(ScalarScore, VectorScore, WeightScore):
     def _calc_BCC(self, BNC):
         """Compute the background CODON composition of the sequence.
 
-        Position-aware product over all 64 codons, normalised over all 64
-        (preserving the prior denominator), then subset to the active
-        codon set in `counter.codon_index` order.
+        Per-position product over the active codon set, normalised by
+        the full 64-codon denominator (preserving the prior numerical
+        contract). The denominator equals the product of BNC's column
+        sums by distributivity:
+            sum_{b0,b1,b2 in ACGT} BNC[b0,0]*BNC[b1,1]*BNC[b2,2]
+              = (sum_b0 BNC[b0,0]) * (sum_b1 BNC[b1,1]) * (sum_b2 BNC[b2,2])
+        so the 64-codon array never has to be materialised.
 
         Returns
         -------
         numpy.ndarray
             BCC in `counter.codon_index` order.
         """
-        bcc_full = BNC[self._codon_pos_idx, np.arange(3)].prod(axis=1).astype(float)
-        bcc_full /= bcc_full.sum()
-        return bcc_full[self._bcc_idx_map]
+        bcc = BNC[self.counter.codon_base_idx, np.arange(3)].prod(axis=1).astype(float)
+        bcc /= BNC.sum(axis=0).prod()
+        return bcc
 
 
 class NormalizedTranslationalEfficiency(ScalarScore, VectorScore):

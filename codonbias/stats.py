@@ -95,6 +95,17 @@ class CodonCounter(object):
             )
             self._codon_lex_to_aa[lex] = aa_idx
 
+        # Per-codon base indices (A=0 C=1 G=2 T=3) for callers that need
+        # to read background nucleotide compositions. Shape
+        # (len(codon_index), 3) int8. Defined only for k_mer=1; k_mer>1
+        # callers don't currently need this LUT.
+        if self.k_mer == 1:
+            base_to_idx = {"A": 0, "C": 1, "G": 2, "T": 3}
+            self.codon_base_idx = np.array(
+                [[base_to_idx[b] for b in cod] for cod in self.codon_index],
+                dtype=np.int8,
+            )
+
     def count_array(self, seq):
         """Stateless k_mer=1 codon count.
 
