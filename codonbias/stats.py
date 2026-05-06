@@ -95,14 +95,13 @@ class CodonCounter(object):
 
         # Per-codon base indices (A=0 C=1 G=2 T=3) for callers that need
         # to read background nucleotide compositions. Shape
-        # (len(codon_index), 3) int8. Defined only for k_mer=1; k_mer>1
-        # callers don't currently need this LUT.
-        if self.k_mer == 1:
-            base_to_idx = {"A": 0, "C": 1, "G": 2, "T": 3}
-            self.codon_base_idx = np.array(
-                [[base_to_idx[b] for b in cod] for cod in self.codon_index],
-                dtype=np.int8,
-            )
+        # (len(codon_index), 3) int8. Always built; k_mer>1 callers
+        # consume it via ``codon_base_idx_kmer`` below.
+        base_to_idx = {"A": 0, "C": 1, "G": 2, "T": 3}
+        self.codon_base_idx = np.array(
+            [[base_to_idx[b] for b in cod] for cod in self.codon_index],
+            dtype=np.int8,
+        )
 
     def count_array(self, seq):
         """Stateless k-mer codon count.
@@ -224,6 +223,50 @@ class CodonCounter(object):
                 "".join(t) for t in product(self.codon_index, repeat=self.k_mer)
             ]
         return self._kmer_index
+
+    @property
+    def aa_group_kmer(self):
+        """Aa-tuple group id for each k-mer in lex-product order.
+
+        Shape ``(len(codon_index) ** k_mer,)``. For k_mer=1 this is just
+        ``aa_group``. For k_mer>1 the i-th codon position contributes
+        ``aa_group[c_i] * n_aa ** (k - 1 - i)``, so the result indexes
+        the cartesian product of aa groups across positions. Lets
+        aa-grouped reductions (e.g., ENC's chi-square sum) work
+        uniformly across k_mer via ``np.bincount(aa_group_kmer, ...)``.
+        Built lazily.
+        """
+        if self.k_mer == 1:
+            return self.aa_group
+        if not hasattr(self, "_aa_group_kmer"):
+            n_codons = len(self.codon_index)
+            # idx[i] is shape (n_codons**k_mer,) and gives the codon index
+            # at k-mer position i for every bucket in lex-product order.
+            idx = np.indices((n_codons,) * self.k_mer).reshape(self.k_mer, -1)
+            result = np.zeros(n_codons**self.k_mer, dtype=np.int32)
+            for i in range(self.k_mer):
+                result += self.aa_group[idx[i]] * self.n_aa ** (self.k_mer - 1 - i)
+            self._aa_group_kmer = result
+        return self._aa_group_kmer
+
+    @property
+    def codon_base_idx_kmer(self):
+        """Per-k-mer base indices, shape ``(n_codons ** k_mer, 3 * k_mer)``.
+
+        Generalises ``codon_base_idx`` to any k_mer: for each k-mer in
+        lex-product order, the row holds the base indices at all
+        ``3 * k_mer`` positions (concatenated across k-mer positions).
+        Built lazily.
+        """
+        if self.k_mer == 1:
+            return self.codon_base_idx
+        if not hasattr(self, "_codon_base_idx_kmer"):
+            n_codons = len(self.codon_index)
+            idx = np.indices((n_codons,) * self.k_mer).reshape(self.k_mer, -1)
+            self._codon_base_idx_kmer = np.concatenate(
+                [self.codon_base_idx[idx[i]] for i in range(self.k_mer)], axis=1
+            )
+        return self._codon_base_idx_kmer
 
     def get_codon_table(self, normed=False, pseudocount=1, nonzero=False):
         """
