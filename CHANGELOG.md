@@ -4,15 +4,17 @@
 if v0.4.0 moved the k_mer=1 hot paths from pandas to numpy, this release
 does the same for k_mer>1. `CodonCounter.count_array` is now a single
 vectorised entry point for any k_mer in [1, 3], and every score routes
-through it on the hot path - including ENC k_mer>1, which was the last
-remaining pandas-Series implementation. `count(seqs)` becomes a thin
-formatter on top.
+through it on the hot path - including ENC k_mer>1 and CUFS, which were
+the last remaining pandas-Series implementations. `count(seqs)` becomes
+a thin formatter on top.
 
 alongside the perf work, the package consolidates a few subclass-as-config
 patterns into single classes with a kwarg (`WeightOptimizer(strategy=...)`,
-`Permuter(scope=...)`), and promotes a handful of underscore-prefixed
+`Permuter(scope=...)`), promotes a handful of underscore-prefixed
 counter internals (`aa_group`, `codon_base_idx`, `kmer_index`,
-`count_array`) onto the documented public surface that scores depend on.
+`count_array`) onto the documented public surface that scores depend on,
+and factors the str/list/ndarray dispatch shared by `get_score` /
+`get_vector` / `get_weights` into a single `Score._dispatch` helper.
 
 per-call timings on a 3.6 kb sequence (200 calls, mean):
 
@@ -24,11 +26,27 @@ per-call timings on a 3.6 kb sequence (200 calls, mean):
 | `CodonCounter.count(seq).counts` k=2  | 0.15 ms   | 0.04 ms  |  ~3.5x  |
 | RCB                                   | ~0.15 ms  | 0.04 ms  |  ~3.5x  |
 | ENC k_mer=1 (default, bg_correction)  | (vectorised in v0.4.0)        | within noise |
+| CUFS.get_score                        | 1.02 ms   | 0.042 ms |   ~24x  |
+| CUFS.get_score synonymous=True        | 1.77 ms   | 0.045 ms |   ~39x  |
 
 ENC k_mer=2 with `bg_correction=True` was dominated by a python listcomp
 over codon-pair strings (`[np.prod([BNC[c] for c in cod]) for cod in ...]`
 across 3,721 pairs). replacing it with one ndarray lookup
 (`BNC[codon_base_idx_kmer].prod(axis=1)`) is where the ~110x came from.
+
+CUFS' ~24-39x came from dropping the
+`count(seqs).get_codon_table(normed=True, pseudocount=...).T.values`
+chain — pandas Series wrap, sort_index, pseudocount, normalise, transpose,
+values - and replacing it with one `count_array` per seq, an
+`np.add.at`-driven per-aa-group sum (synonymous branch), and a single
+divide.
+
+`CUFS.get_matrix` on 20 sequences drops from 0.92 ms to 0.40 ms (~2.3x).
+the headline is diluted by the broadcasted KL math in `_calc_matrix`,
+which was already a numpy op pre-v0.5.0 and is unchanged. splitting the
+post-change 0.40 ms gives 0.25 ms in `_calc_weights` and 0.14 ms in
+`_calc_matrix`; weights-side alone is ~3x (0.78 ms -> 0.25 ms), but
+the constant KL floor caps the total to 2.3x.
 
 ## performance
 
@@ -59,6 +77,15 @@ across 3,721 pairs). replacing it with one ndarray lookup
 - `geomean_array` / `mean_array` helpers in `utils` for the count_array
   hot path (#26, #27). aligned-ndarray siblings of the existing
   `geomean` / `mean` (which still serve the init-time pandas paths).
+- `pairwise.CodonUsageFrequency` rewritten on `count_array`. last
+  in-package hot path still routing through
+  `count(seqs).get_codon_table` / `.get_aa_table`. now stacks per-seq
+  `count_array` into `(n_kmers, n_seqs)`, normalises with
+  `np.add.at`-driven per-aa-group sums (synonymous branch) or a single
+  divide (non-synonymous). KL pair score is invariant to consistent
+  reordering of both arms, so the count_array order
+  (`counter.kmer_index`, aa-then-codon) replaces the prior alphabetic
+  codon order without changing scores.
 
 ## refactors
 
@@ -79,6 +106,19 @@ across 3,721 pairs). replacing it with one ndarray lookup
   `RelativeCodonBiasScore` (#24). `_calc_score` is now self-contained;
   it no longer relies on a prior `_calc_seq_weights` populating
   `self.counter.counts` (which broke concurrent use).
+- `Score._dispatch(seq, calc_fn, slice=None, **kwargs)` base method
+  shared by `ScalarScore.get_score`, `VectorScore.get_vector` and
+  `WeightScore.get_weights`. each base previously carried its own
+  near-identical str/list/ndarray dispatch shell (~30 lines × 3); now
+  they're one-line wrappers. `VectorScore.get_vector` keeps the
+  `pad` / ragged-stack `dtype=object` branch inline for the iterable
+  path (one caller, not worth threading through `_dispatch`). public
+  API unchanged.
+- `pairwise.PairwiseScore.get_matrix` n_jobs=1 dead code fixed. the
+  sequential `starmap` branch built `sf` and was unconditionally
+  overwritten by the next-line `Pool.starmap` - n_jobs=1 silently went
+  through a one-worker Pool, paying fork overhead with no parallelism.
+  output unchanged.
 
 ## breaking changes
 
