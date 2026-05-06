@@ -15,7 +15,34 @@ from .utils import (
 )
 
 
-class ScalarScore(object):
+class Score(object):
+    """Internal base for `ScalarScore`, `VectorScore`, `WeightScore`.
+
+    Holds the shared str / list / ndarray dispatch used by `get_score`,
+    `get_vector`, `get_weights`. Subclasses keep their named public
+    methods; only the dispatch shell lives here.
+    """
+
+    def _dispatch(self, seq, calc_fn, slice=None, **kwargs):
+        """Dispatch a single-seq calc function over str or iterable input.
+
+        - ``str``: applies ``slice`` if given, calls ``calc_fn(seq, **kwargs)``.
+        - ``list`` / ``ndarray``: recurses element-wise, returns
+          ``np.array(results)``. Callers needing custom post-processing
+          (e.g. ragged stacking, dtype=object) handle the iterable case
+          themselves and use ``_dispatch`` only on the str branch.
+        - any other type: raises ``ValueError``.
+        """
+        if isinstance(seq, str):
+            return calc_fn(seq[slice] if slice is not None else seq, **kwargs)
+        if isinstance(seq, (list, np.ndarray)):
+            return np.array(
+                [self._dispatch(s, calc_fn, slice=slice, **kwargs) for s in seq]
+            )
+        raise ValueError(f"unknown sequence type: {type(seq)}")
+
+
+class ScalarScore(Score):
     """
     Abstract class for models that output a scalar per sequence.
     Inheriting classes may implement the computation of the score for
@@ -52,23 +79,13 @@ class ScalarScore(object):
         >>> EffectiveNumberOfCodons().get_score('ACGACGGAGGAG', slice=slice(6))
         44.33333333333333
         """
-        if isinstance(seq, str):
-            pass
-        elif isinstance(seq, list) or isinstance(seq, np.ndarray):
-            return np.array([self.get_score(s, slice=slice, **kwargs) for s in seq])
-        else:
-            raise ValueError(f"unknown sequence type: {type(seq)}")
-
-        if slice is not None:
-            return self._calc_score(seq[slice], **kwargs)
-        else:
-            return self._calc_score(seq, **kwargs)
+        return self._dispatch(seq, self._calc_score, slice=slice, **kwargs)
 
     def _calc_score(self, seq):
         raise Exception("not implemented")
 
 
-class VectorScore(object):
+class VectorScore(Score):
     """
     Abstract class for models that output a vector per sequence. For
     example, the output can be a score per position in the sequence.
@@ -104,31 +121,30 @@ class VectorScore(object):
             M.
         """
         if isinstance(seq, str):
-            if slice is not None:
-                return self._calc_vector(seq[slice], **kwargs)
-            else:
-                return self._calc_vector(seq, **kwargs)
-        elif isinstance(seq, list) or isinstance(seq, np.ndarray):
-            pass
-        else:
+            return self._dispatch(seq, self._calc_vector, slice=slice, **kwargs)
+        if not isinstance(seq, (list, np.ndarray)):
             raise ValueError(f"unknown sequence type: {type(seq)}")
 
-        dtype = (
-            object
-            if slice is None and np.unique([len(s) for s in seq]).size > 1 and not pad
-            else None
-        )
-        vecs = [self.get_vector(s, slice=slice, **kwargs) for s in seq]
-
+        # Iterable path: handle ragged stacking explicitly. pad=True
+        # equalises lengths with trailing NaN; otherwise variable-length
+        # seqs default to dtype=object so np.array doesn't raise.
+        vecs = [
+            self._dispatch(s, self._calc_vector, slice=slice, **kwargs) for s in seq
+        ]
         if pad:
-            max_len = max([len(v) for v in vecs])
+            max_len = max(len(v) for v in vecs)
             vecs = [
                 np.pad(
                     v, (0, max_len - len(v)), mode="constant", constant_values=np.nan
                 )
                 for v in vecs
             ]
-
+            return np.array(vecs)
+        dtype = (
+            object
+            if slice is None and np.unique([len(s) for s in seq]).size > 1
+            else None
+        )
         return np.array(vecs, dtype=dtype)
 
     def _calc_vector(self, seq):
@@ -138,7 +154,7 @@ class VectorScore(object):
         return iter_codons(seq, k_mer=k_mer)
 
 
-class WeightScore(object):
+class WeightScore(Score):
     """
     Abstract class for models that output a weights vector per sequence.
     Inheriting classes may implement the computation of the score for
@@ -168,17 +184,7 @@ class WeightScore(object):
             N by C array with a weights vector for each of the N provided
             sequences.
         """
-        if isinstance(seq, str):
-            pass
-        elif isinstance(seq, list) or isinstance(seq, np.ndarray):
-            return np.array([self.get_weights(s, slice=slice, **kwargs) for s in seq])
-        else:
-            raise ValueError(f"unknown sequence type: {type(seq)}")
-
-        if slice is not None:
-            return self._calc_seq_weights(seq[slice], **kwargs)
-        else:
-            return self._calc_seq_weights(seq, **kwargs)
+        return self._dispatch(seq, self._calc_seq_weights, slice=slice, **kwargs)
 
     def _calc_seq_weights(self, seq):
         raise Exception("not implemented")
