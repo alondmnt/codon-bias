@@ -188,7 +188,7 @@ class CodonCounter(object):
             CodonCounter object (self) with updated counts
         """
         res = self._count(seqs)
-        index = self.codon_index if self.k_mer == 1 else self._get_kmer_index()
+        index = self.kmer_index
         self.counts = (
             pd.Series(res, index=index, name="count")
             if res.ndim == 1
@@ -210,7 +210,16 @@ class CodonCounter(object):
             return counts.sum(axis=1) if self.sum_seqs else counts
         raise ValueError(f"unknown sequence type: {type(seqs)}")
 
-    def _get_kmer_index(self):
+    @property
+    def kmer_index(self):
+        """Concat-string index aligned to ``count_array``'s output order.
+
+        For k_mer=1 this is just ``codon_index``; for k_mer>1 it is the
+        lex product of ``codon_index`` joined into k-mer strings (e.g.,
+        ``['AAAAAA', 'AAAACC', ...]`` for k_mer=2). Built lazily.
+        """
+        if self.k_mer == 1:
+            return self.codon_index
         if not hasattr(self, "_kmer_index"):
             self._kmer_index = [
                 "".join(t) for t in product(self.codon_index, repeat=self.k_mer)
