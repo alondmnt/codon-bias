@@ -108,10 +108,17 @@ class CodonCounter(object):
             )
 
     def count_array(self, seq):
-        """Stateless k_mer=1 codon count.
+        """Stateless k-mer codon count.
 
-        Returns an ndarray of shape ``(len(self.codon_index),)`` ordered
-        by ``self.codon_index``. Does not touch ``self.counts``.
+        Returns an ndarray of shape ``(len(self.codon_index) ** k_mer,)``
+        ordered by the lex product of ``self.codon_index`` (k_mer=1
+        reduces to ``self.codon_index``). K-mers containing a stop or
+        non-ACGT base are dropped, matching the observable output of
+        ``get_codon_table``. Does not touch ``self.counts``.
+
+        Supported for k_mer in [1, 3]; above that the dense aligned
+        output would require >14M entries per call and the method
+        raises ``NotImplementedError``.
 
         Parameters
         ----------
@@ -121,24 +128,46 @@ class CodonCounter(object):
         Returns
         -------
         numpy.ndarray
-            Codon counts as float.
+            Codon (or codon k-mer) counts as float.
         """
-        if self.k_mer != 1:
-            raise NotImplementedError("count_array is currently k_mer=1 only")
+        if self.k_mer > 3:
+            raise NotImplementedError(
+                f"count_array supports k_mer <= 3 (got k_mer={self.k_mer}); "
+                f"a dense aligned output would need "
+                f"{len(self.codon_index) ** self.k_mer:,} entries"
+            )
         if not isinstance(seq, str):
             raise ValueError(f"sequence is not a string: {type(seq)}")
 
         seq = seq.upper().replace("U", "T")
         b = seq.encode("ascii", errors="replace")
-        n_codons = len(b) // 3
-        arr = np.frombuffer(b[: n_codons * 3], dtype=np.uint8).reshape(n_codons, 3)
+        n_codons_total = len(b) // 3
+        arr = np.frombuffer(b[: n_codons_total * 3], dtype=np.uint8).reshape(
+            n_codons_total, 3
+        )
         base_ids = _BASE_LUT[arr]
         lex_ids = base_ids[:, 0] * 25 + base_ids[:, 1] * 5 + base_ids[:, 2]
         codon_ids = self._codon_lex_to_idx[lex_ids]
-        valid = codon_ids >= 0
-        return np.bincount(
-            codon_ids[valid], minlength=len(self.codon_index)
-        ).astype(float)
+
+        n_codons = len(self.codon_index)
+        n_out = n_codons**self.k_mer
+        if self.k_mer == 1:
+            valid = codon_ids >= 0
+            return np.bincount(codon_ids[valid], minlength=n_out).astype(float)
+
+        # k_mer in {2, 3}: sliding window over codon ids (stride 1, matching
+        # iter_codons step=3), then combine each window into a single bucket
+        # id ``sum(idx[i] * n_codons ** (k-1-i))`` for bincount. Windows that
+        # contain a stop/sentinel codon are dropped, mirroring the k_mer=1
+        # path.
+        k = self.k_mer
+        if n_codons_total < k:
+            return np.zeros(n_out, dtype=float)
+        windows = np.lib.stride_tricks.sliding_window_view(codon_ids, k)
+        valid = (windows >= 0).all(axis=1)
+        powers = n_codons ** np.arange(k - 1, -1, -1)
+        combined = (windows * powers).sum(axis=1)
+        return np.bincount(combined[valid], minlength=n_out).astype(float)
 
     def count(self, seqs):
         """
