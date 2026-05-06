@@ -149,6 +149,30 @@ def mean(weights, counts):
     return (weights[nn] * counts.reindex(nn)).sum() / counts.reindex(nn).sum()
 
 
+def mean_array(weights, counts):
+    """
+    Count-weighted arithmetic mean over aligned ndarray inputs.
+
+    Fast-path sibling of `mean` for the count_array hot path. Both arrays
+    must be aligned to the same codon (or k-mer) order; non-finite
+    entries in `weights` are masked out before the reduction.
+
+    Parameters
+    ----------
+    weights : numpy.ndarray
+        Codon scores, aligned to a fixed codon order.
+    counts : numpy.ndarray
+        Codon counts, aligned to the same order as `weights`.
+
+    Returns
+    -------
+    float
+        Arithmetic mean.
+    """
+    mask = np.isfinite(weights)
+    return (weights[mask] * counts[mask]).sum() / counts[mask].sum()
+
+
 def fetch_GCN_from_GtRNAdb(url=None, genome=None, domain=None):
     """
     Download a tRNA gene copy number (GCN) table for an organism

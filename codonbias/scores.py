@@ -8,10 +8,9 @@ from scipy import optimize, stats
 from .stats import BaseCounter, CodonCounter
 from .utils import (
     fetch_GCN_from_GtRNAdb,
-    geomean,
     geomean_array,
     iter_codons,
-    mean,
+    mean_array,
     reverse_complement,
 )
 
@@ -450,11 +449,8 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         self._calc_weights(ref_seq)
 
     def _calc_score(self, seq):
-        if self.k_mer == 1:
-            counts = self.counter.count_array(seq)
-            return geomean_array(self._log_weights_arr, counts)
-        counts = self.counter.count(seq).counts
-        return geomean(self.log_weights, counts)
+        counts = self.counter.count_array(seq)
+        return geomean_array(self._log_weights_arr, counts)
 
     def _calc_vector(self, seq):
         return self.weights.reindex(
@@ -474,11 +470,7 @@ class CodonAdaptationIndex(ScalarScore, VectorScore):
         )
 
         self.log_weights = np.log(self.weights)
-
-        if self.k_mer == 1:
-            self._log_weights_arr = self.log_weights.reindex(
-                self.counter.codon_index
-            ).values
+        self._log_weights_arr = self.log_weights.reindex(self.counter.kmer_index).values
 
 
 class EffectiveNumberOfCodons(ScalarScore, WeightScore):
@@ -983,11 +975,11 @@ class CodonPairBias(ScalarScore, VectorScore, WeightScore):
         self.pseudocount = pseudocount
 
         self.weights = self._calc_model_weights(ref_seq)
+        self._weights_arr = self.weights.reindex(self.counter.kmer_index).values
 
     def _calc_score(self, seq):
-        counts = self.counter.count(seq).counts
-
-        return mean(self.weights, counts)
+        counts = self.counter.count_array(seq)
+        return mean_array(self._weights_arr, counts)
 
     def _calc_vector(self, seq):
         return self.weights.reindex(

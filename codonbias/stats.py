@@ -1,11 +1,8 @@
 import os
-from collections import Counter
 from itertools import product
 
 import numpy as np
 import pandas as pd
-
-from .utils import iter_codons
 
 gc = pd.read_csv(
     f"{os.path.dirname(__file__)}/genetic_code_ncbi.csv", index_col=0
@@ -83,17 +80,18 @@ class CodonCounter(object):
         self._aa_to_idx = {aa: i for i, aa in enumerate(unique_aa)}
         self.aa_group = np.array([self._aa_to_idx[aa] for aa in code["aa"]])
 
-        # Base-5 packed codon LUT for the vectorised k_mer=1 path. Codon
-        # ids are packed b0*25 + b1*5 + b2 so sentinel-containing triplets
-        # never collide with valid ACGT triplets.
-        self._codon_lex_to_aa = np.full(125, -1, dtype=np.int32)
-        for aa_idx, codon in enumerate(self.codon_index):
+        # Base-5 packed codon LUT for the vectorised path. Codon ids are
+        # packed b0*25 + b1*5 + b2 so sentinel-containing triplets never
+        # collide with valid ACGT triplets. Values are indices into
+        # ``codon_index`` (-1 for stops or sentinel-containing triplets).
+        self._codon_lex_to_idx = np.full(125, -1, dtype=np.int32)
+        for codon_idx, codon in enumerate(self.codon_index):
             lex = (
                 25 * "ACGT".index(codon[0])
                 + 5 * "ACGT".index(codon[1])
                 + "ACGT".index(codon[2])
             )
-            self._codon_lex_to_aa[lex] = aa_idx
+            self._codon_lex_to_idx[lex] = codon_idx
 
         # Per-codon base indices (A=0 C=1 G=2 T=3) for callers that need
         # to read background nucleotide compositions. Shape
@@ -107,10 +105,17 @@ class CodonCounter(object):
             )
 
     def count_array(self, seq):
-        """Stateless k_mer=1 codon count.
+        """Stateless k-mer codon count.
 
-        Returns an ndarray of shape ``(len(self.codon_index),)`` ordered
-        by ``self.codon_index``. Does not touch ``self.counts``.
+        Returns an ndarray of shape ``(len(self.codon_index) ** k_mer,)``
+        ordered by the lex product of ``self.codon_index`` (k_mer=1
+        reduces to ``self.codon_index``). K-mers containing a stop or
+        non-ACGT base are dropped, matching the observable output of
+        ``get_codon_table``. Does not touch ``self.counts``.
+
+        Supported for k_mer in [1, 3]; above that the dense aligned
+        output would require >14M entries per call and the method
+        raises ``NotImplementedError``.
 
         Parameters
         ----------
@@ -120,27 +125,56 @@ class CodonCounter(object):
         Returns
         -------
         numpy.ndarray
-            Codon counts as float.
+            Codon (or codon k-mer) counts as float.
         """
-        if self.k_mer != 1:
-            raise NotImplementedError("count_array is currently k_mer=1 only")
+        if self.k_mer > 3:
+            raise NotImplementedError(
+                f"count_array supports k_mer <= 3 (got k_mer={self.k_mer}); "
+                f"a dense aligned output would need "
+                f"{len(self.codon_index) ** self.k_mer:,} entries"
+            )
         if not isinstance(seq, str):
             raise ValueError(f"sequence is not a string: {type(seq)}")
 
         seq = seq.upper().replace("U", "T")
         b = seq.encode("ascii", errors="replace")
-        n_codons = len(b) // 3
-        arr = np.frombuffer(b[: n_codons * 3], dtype=np.uint8).reshape(n_codons, 3)
+        n_codons_total = len(b) // 3
+        arr = np.frombuffer(b[: n_codons_total * 3], dtype=np.uint8).reshape(
+            n_codons_total, 3
+        )
         base_ids = _BASE_LUT[arr]
         lex_ids = base_ids[:, 0] * 25 + base_ids[:, 1] * 5 + base_ids[:, 2]
-        aa_ids = self._codon_lex_to_aa[lex_ids]
-        valid = aa_ids >= 0
-        return np.bincount(aa_ids[valid], minlength=len(self.codon_index)).astype(float)
+        codon_ids = self._codon_lex_to_idx[lex_ids]
+
+        n_codons = len(self.codon_index)
+        n_out = n_codons**self.k_mer
+        if self.k_mer == 1:
+            valid = codon_ids >= 0
+            return np.bincount(codon_ids[valid], minlength=n_out).astype(float)
+
+        # k_mer in {2, 3}: sliding window over codon ids (stride 1, matching
+        # iter_codons step=3), then combine each window into a single bucket
+        # id ``sum(idx[i] * n_codons ** (k-1-i))`` for bincount. Windows that
+        # contain a stop/sentinel codon are dropped, mirroring the k_mer=1
+        # path.
+        k = self.k_mer
+        if n_codons_total < k:
+            return np.zeros(n_out, dtype=float)
+        windows = np.lib.stride_tricks.sliding_window_view(codon_ids, k)
+        valid = (windows >= 0).all(axis=1)
+        powers = n_codons ** np.arange(k - 1, -1, -1)
+        combined = (windows * powers).sum(axis=1)
+        return np.bincount(combined[valid], minlength=n_out).astype(float)
 
     def count(self, seqs):
         """
         Update the CodonCounter object with the codon counts of the given
         sequence(s).
+
+        Routes through ``count_array`` for the heavy lifting, then wraps
+        the resulting ndarray back into a pandas Series/DataFrame indexed
+        by the lex-product codon order. The MultiIndex split (when
+        ``concat_index=False``) is applied here as a presentation step.
 
         Parameters
         ----------
@@ -153,58 +187,43 @@ class CodonCounter(object):
             CodonCounter object (self) with updated counts
         """
         res = self._count(seqs)
-        # MINIMAL CHANGE: Wrap NumPy back to Pandas at the boundary for k_mer=1
-        if self.k_mer == 1:
-            self.counts = (
-                pd.Series(res, index=self.codon_index, name="count")
-                if res.ndim == 1
-                else pd.DataFrame(res, index=self.codon_index)
+        index = self.kmer_index
+        self.counts = (
+            pd.Series(res, index=index, name="count")
+            if res.ndim == 1
+            else pd.DataFrame(res, index=index)
+        )
+        self.counts.index.name = "codon"
+        if self.k_mer > 1 and not self.concat_index:
+            self.counts.index = pd.MultiIndex.from_arrays(
+                [self.counts.index.str[3 * k : 3 * (k + 1)] for k in range(self.k_mer)],
+                names=[f"codon{k}" for k in range(self.k_mer)],
             )
-            self.counts.index.name = "codon"
-        else:
-            self.counts = self._format_counts(res)
-            if self.counts.ndim == 1:
-                self.counts = self.counts.rename("count")
         return self
 
     def _count(self, seqs):
-        if self.k_mer == 1:
-            if isinstance(seqs, str):
-                return self.count_array(seqs)
-            if isinstance(seqs, (list, np.ndarray)):
-                counts = np.column_stack([self.count_array(s) for s in seqs])
-                return counts.sum(axis=1) if self.sum_seqs else counts
-            raise ValueError(f"unknown sequence type: {type(seqs)}")
-
-        # k_mer > 1: pandas/Counter fallback
         if isinstance(seqs, str):
-            return self._count_kmer_n(seqs)
+            return self.count_array(seqs)
         if isinstance(seqs, (list, np.ndarray)):
-            counts = pd.concat([self._count_kmer_n(s) for s in seqs], axis=1).fillna(0)
+            counts = np.column_stack([self.count_array(s) for s in seqs])
             return counts.sum(axis=1) if self.sum_seqs else counts
         raise ValueError(f"unknown sequence type: {type(seqs)}")
 
-    def _count_kmer_n(self, seq):
-        if not isinstance(seq, str):
-            raise ValueError(f"sequence is not a string: {type(seq)}")
-        seq = seq.upper().replace("U", "T")
-        return pd.Series(
-            Counter(iter_codons(seq, k_mer=self.k_mer)),
-            dtype=int,
-        )
+    @property
+    def kmer_index(self):
+        """Concat-string index aligned to ``count_array``'s output order.
 
-    def _format_counts(self, counts):
-        counts.index.name = "codon"
-
-        if self.concat_index:
-            return counts
-
-        counts.index = pd.MultiIndex.from_arrays(
-            [counts.index.str[3 * k : 3 * (k + 1)] for k in range(self.k_mer)],
-            names=[f"codon{k}" for k in range(self.k_mer)],
-        )
-
-        return counts
+        For k_mer=1 this is just ``codon_index``; for k_mer>1 it is the
+        lex product of ``codon_index`` joined into k-mer strings (e.g.,
+        ``['AAAAAA', 'AAAACC', ...]`` for k_mer=2). Built lazily.
+        """
+        if self.k_mer == 1:
+            return self.codon_index
+        if not hasattr(self, "_kmer_index"):
+            self._kmer_index = [
+                "".join(t) for t in product(self.codon_index, repeat=self.k_mer)
+            ]
+        return self._kmer_index
 
     def get_codon_table(self, normed=False, pseudocount=1, nonzero=False):
         """
@@ -405,10 +424,13 @@ class BaseCounter(object):
             self.count(seqs)
 
     def count_array(self, seq):
-        """Stateless k_mer=1 base count.
+        """Stateless k-mer base count.
 
-        Returns an ndarray of shape ``(4,)`` in ACGT order. Respects
-        ``self.frame`` and ``self.step``. Does not touch ``self.counts``.
+        Returns an ndarray of shape ``(4 ** k_mer,)`` ordered by the lex
+        product of ACGT. Respects ``self.frame`` and ``self.step`` (which
+        select the *starting* positions of each k-mer; the k bases inside
+        each k-mer are always consecutive). K-mers containing any
+        non-ACGT base are dropped. Does not touch ``self.counts``.
 
         Parameters
         ----------
@@ -418,18 +440,33 @@ class BaseCounter(object):
         Returns
         -------
         numpy.ndarray
-            Base counts as int.
+            Base (or base k-mer) counts as int.
         """
-        if self.k_mer != 1:
-            raise NotImplementedError("count_array is currently k_mer=1 only")
         if not isinstance(seq, str):
             raise ValueError(f"sequence is not a string: {type(seq)}")
 
         seq = seq.upper().replace("U", "T")
         b = seq.encode("ascii", errors="replace")
-        arr = np.frombuffer(b, dtype=np.uint8)[self.frame - 1 :: self.step]
+        arr = np.frombuffer(b, dtype=np.uint8)
         base_ids = _BASE_LUT[arr]
-        return np.bincount(base_ids[base_ids < 4], minlength=4)
+
+        k = self.k_mer
+        n_out = 4**k
+        if k == 1:
+            strided = base_ids[self.frame - 1 :: self.step]
+            return np.bincount(strided[strided < 4], minlength=n_out)
+
+        # k_mer > 1: take all consecutive k-grams, then keep starts on the
+        # ``frame``/``step`` grid (matches the original Counter generator
+        # ``range(frame-1, last_pos, step)`` over ``seq[i:i+k]``).
+        if len(base_ids) < k:
+            return np.zeros(n_out, dtype=np.int64)
+        windows = np.lib.stride_tricks.sliding_window_view(base_ids, k)
+        windows = windows[self.frame - 1 :: self.step]
+        valid = (windows < 4).all(axis=1)
+        powers = 4 ** np.arange(k - 1, -1, -1)
+        combined = (windows * powers).sum(axis=1)
+        return np.bincount(combined[valid], minlength=n_out)
 
     def count(self, seqs):
         """
@@ -447,50 +484,35 @@ class BaseCounter(object):
             BaseCounter object (self) with updated counts
         """
         res = self._count(seqs)
-        if self.k_mer == 1:
-            # _count returns ndarray: (4,) for single/sum, (4, N) for multi.
-            index = list("ACGT")
-            self.counts = (
-                pd.Series(res, index=index, name="count")
-                if res.ndim == 1
-                else pd.DataFrame(res, index=index)
-            )
-        else:
-            self.counts = res.reindex(self._init_table()).fillna(0)
-            if self.counts.ndim == 1:
-                self.counts = self.counts.rename("count")
-
+        index = self.kmer_index
+        self.counts = (
+            pd.Series(res, index=index, name="count")
+            if res.ndim == 1
+            else pd.DataFrame(res, index=index)
+        )
         return self
 
     def _count(self, seqs):
-        if self.k_mer == 1:
-            if isinstance(seqs, str):
-                return self.count_array(seqs)
-            if isinstance(seqs, (list, np.ndarray)):
-                counts = np.column_stack([self.count_array(s) for s in seqs])
-                return counts.sum(axis=1) if self.sum_seqs else counts
-            raise ValueError(f"unknown sequence type: {type(seqs)}")
-
-        # k_mer > 1: pandas/Counter fallback
         if isinstance(seqs, str):
-            return self._count_kmer_n(seqs)
+            return self.count_array(seqs)
         if isinstance(seqs, (list, np.ndarray)):
-            counts = pd.concat([self._count_kmer_n(s) for s in seqs], axis=1).fillna(0)
+            counts = np.column_stack([self.count_array(s) for s in seqs])
             return counts.sum(axis=1) if self.sum_seqs else counts
         raise ValueError(f"unknown sequence type: {type(seqs)}")
 
-    def _count_kmer_n(self, seq):
-        if not isinstance(seq, str):
-            raise ValueError(f"sequence is not a string: {type(seq)}")
-        seq = seq.upper().replace("U", "T")
-        last_pos = len(seq) - self.k_mer + 1
-        return pd.Series(
-            Counter(
-                seq[i : i + self.k_mer]
-                for i in range(self.frame - 1, last_pos, self.step)
-            ),
-            dtype=int,
-        )
+    @property
+    def kmer_index(self):
+        """Concat-string index aligned to ``count_array``'s output order.
+
+        For k_mer=1 this is ``['A', 'C', 'G', 'T']``; for k_mer>1 it is
+        the lex product of ACGT joined into k-mer strings (e.g.,
+        ``['AA', 'AC', ..., 'TT']`` for k_mer=2). Built lazily.
+        """
+        if self.k_mer == 1:
+            return list("ACGT")
+        if not hasattr(self, "_kmer_index"):
+            self._kmer_index = ["".join(t) for t in product("ACGT", repeat=self.k_mer)]
+        return self._kmer_index
 
     def get_table(self, normed=False, pseudocount=1):
         """
@@ -521,6 +543,3 @@ class BaseCounter(object):
             return stats / stats.sum()
         else:
             return stats
-
-    def _init_table(self):
-        return ["".join(comb) for comb in list(product(*(self.k_mer * ["ACGT"])))]
