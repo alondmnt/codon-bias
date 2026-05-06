@@ -155,18 +155,42 @@ class CodonUsageFrequency(PairwiseScore):
         self.pseudocount = pseudocount
 
     def _calc_weights(self, seqs):
-        if isinstance(seqs, str):
+        # Hot path: per-seq count_array stacked into (n_kmers, n_seqs).
+        # Skips the count(seqs) -> pandas DataFrame -> get_codon_table /
+        # get_aa_table reformat chain on every get_score / get_matrix
+        # call. The KL-based pair score is invariant to consistent
+        # reordering of both arms, so keeping the count_array order
+        # (counter.kmer_index, aa-then-codon) instead of the prior
+        # alphabetic codon order in the non-synonymous branch preserves
+        # the score numerically.
+        #
+        # Output shape mirrors the prior pandas path: 1D (n_kmers,) for a
+        # single str, 2D (n_seqs, n_kmers) for an iterable. _kld and
+        # _calc_matrix both rely on this convention.
+        is_str = isinstance(seqs, str)
+        if is_str:
             seqs = [seqs]
-        counts = self.counter.count(seqs)
 
-        if not self.synonymous:
-            return counts.get_codon_table(
-                normed=True, pseudocount=self.pseudocount
-            ).T.values.astype(np.float32)
+        counts = np.column_stack([self.counter.count_array(s) for s in seqs]).astype(
+            np.float64
+        )
+        counts += self.pseudocount
 
-        weights = counts.get_aa_table(normed=True, pseudocount=self.pseudocount)
+        if self.synonymous:
+            aa_groups = (
+                self.counter.aa_group_kmer
+                if self.counter.k_mer > 1
+                else self.counter.aa_group
+            )
+            aa_total = np.zeros((int(aa_groups.max()) + 1, counts.shape[1]))
+            np.add.at(aa_total, aa_groups, counts)
+            weights = counts / aa_total[aa_groups]
+        else:
+            weights = counts / counts.sum(axis=0, keepdims=True)
 
-        return weights.T.values.astype(np.float32)
+        if is_str:
+            return weights[:, 0].astype(np.float32)
+        return weights.T.astype(np.float32)
 
     def _calc_pair_score(self, w1, w2):
         M = 0.5 * (w1 + w2)
