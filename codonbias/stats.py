@@ -5,8 +5,6 @@ from itertools import product
 import numpy as np
 import pandas as pd
 
-from .utils import iter_codons
-
 gc = pd.read_csv(
     f"{os.path.dirname(__file__)}/genetic_code_ncbi.csv", index_col=0
 ).sort_index()
@@ -174,6 +172,11 @@ class CodonCounter(object):
         Update the CodonCounter object with the codon counts of the given
         sequence(s).
 
+        Routes through ``count_array`` for the heavy lifting, then wraps
+        the resulting ndarray back into a pandas Series/DataFrame indexed
+        by the lex-product codon order. The MultiIndex split (when
+        ``concat_index=False``) is applied here as a presentation step.
+
         Parameters
         ----------
         seqs : str, or iterable of str
@@ -185,58 +188,34 @@ class CodonCounter(object):
             CodonCounter object (self) with updated counts
         """
         res = self._count(seqs)
-        # MINIMAL CHANGE: Wrap NumPy back to Pandas at the boundary for k_mer=1
-        if self.k_mer == 1:
-            self.counts = (
-                pd.Series(res, index=self.codon_index, name="count")
-                if res.ndim == 1
-                else pd.DataFrame(res, index=self.codon_index)
+        index = self.codon_index if self.k_mer == 1 else self._get_kmer_index()
+        self.counts = (
+            pd.Series(res, index=index, name="count")
+            if res.ndim == 1
+            else pd.DataFrame(res, index=index)
+        )
+        self.counts.index.name = "codon"
+        if self.k_mer > 1 and not self.concat_index:
+            self.counts.index = pd.MultiIndex.from_arrays(
+                [self.counts.index.str[3 * k : 3 * (k + 1)] for k in range(self.k_mer)],
+                names=[f"codon{k}" for k in range(self.k_mer)],
             )
-            self.counts.index.name = "codon"
-        else:
-            self.counts = self._format_counts(res)
-            if self.counts.ndim == 1:
-                self.counts = self.counts.rename("count")
         return self
 
     def _count(self, seqs):
-        if self.k_mer == 1:
-            if isinstance(seqs, str):
-                return self.count_array(seqs)
-            if isinstance(seqs, (list, np.ndarray)):
-                counts = np.column_stack([self.count_array(s) for s in seqs])
-                return counts.sum(axis=1) if self.sum_seqs else counts
-            raise ValueError(f"unknown sequence type: {type(seqs)}")
-
-        # k_mer > 1: pandas/Counter fallback
         if isinstance(seqs, str):
-            return self._count_kmer_n(seqs)
+            return self.count_array(seqs)
         if isinstance(seqs, (list, np.ndarray)):
-            counts = pd.concat([self._count_kmer_n(s) for s in seqs], axis=1).fillna(0)
+            counts = np.column_stack([self.count_array(s) for s in seqs])
             return counts.sum(axis=1) if self.sum_seqs else counts
         raise ValueError(f"unknown sequence type: {type(seqs)}")
 
-    def _count_kmer_n(self, seq):
-        if not isinstance(seq, str):
-            raise ValueError(f"sequence is not a string: {type(seq)}")
-        seq = seq.upper().replace("U", "T")
-        return pd.Series(
-            Counter(iter_codons(seq, k_mer=self.k_mer)),
-            dtype=int,
-        )
-
-    def _format_counts(self, counts):
-        counts.index.name = "codon"
-
-        if self.concat_index:
-            return counts
-
-        counts.index = pd.MultiIndex.from_arrays(
-            [counts.index.str[3 * k : 3 * (k + 1)] for k in range(self.k_mer)],
-            names=[f"codon{k}" for k in range(self.k_mer)],
-        )
-
-        return counts
+    def _get_kmer_index(self):
+        if not hasattr(self, "_kmer_index"):
+            self._kmer_index = [
+                "".join(t) for t in product(self.codon_index, repeat=self.k_mer)
+            ]
+        return self._kmer_index
 
     def get_codon_table(self, normed=False, pseudocount=1, nonzero=False):
         """
