@@ -29,8 +29,13 @@ author = 'Alon Diament'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = ['sphinx.ext.napoleon',
-              'nbsphinx'
+              'nbsphinx',
+              'myst_parser',
 ]
+
+# myst-parser: enable HTML tables and external link autodetection so the
+# rendered CHANGELOG.md matches its GitHub appearance.
+myst_enable_extensions = ['linkify']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

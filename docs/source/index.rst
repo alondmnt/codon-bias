@@ -17,6 +17,7 @@ Contents
 
    notebooks/getting_started
    codonbias
+   changelog
 
 Indices and tables
 ==================
