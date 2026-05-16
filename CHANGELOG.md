@@ -1,20 +1,17 @@
-# v0.5.0
-*Unreleased*
+# [v0.5.0](https://github.com/alondmnt/codon-bias/releases/tag/v0.5.0)
+*Released on 2026-05-16*
 
 if v0.4.0 moved the k_mer=1 hot paths from pandas to numpy, this release
 does the same for k_mer>1. `CodonCounter.count_array` is now a single
 vectorised entry point for any k_mer in [1, 3], and every score routes
-through it on the hot path - including ENC k_mer>1 and CUFS, which were
-the last remaining pandas-Series implementations. `count(seqs)` becomes
-a thin formatter on top.
+through it on the hot path. `count(seqs)` becomes a thin formatter on top.
 
 alongside the perf work, the package consolidates a few subclass-as-config
 patterns into single classes with a kwarg (`WeightOptimizer(strategy=...)`,
-`Permuter(scope=...)`), promotes a handful of underscore-prefixed
-counter internals (`aa_group`, `codon_base_idx`, `kmer_index`,
-`count_array`) onto the documented public surface that scores depend on,
-and factors the str/list/ndarray dispatch shared by `get_score` /
-`get_vector` / `get_weights` into a single `Score._dispatch` helper.
+`Permuter(scope=...)`), promotes underscore-prefixed counter internals
+onto the documented public surface that scores depend on, and factors
+the str/list/ndarray dispatch shared by `get_score` / `get_vector` /
+`get_weights` into a single `Score._dispatch` helper.
 
 per-call timings on a 3.6 kb sequence (200 calls, mean):
 
@@ -29,96 +26,60 @@ per-call timings on a 3.6 kb sequence (200 calls, mean):
 | CUFS.get_score                        | 1.02 ms   | 0.042 ms |   ~24x  |
 | CUFS.get_score synonymous=True        | 1.77 ms   | 0.045 ms |   ~39x  |
 
-ENC k_mer=2 with `bg_correction=True` was dominated by a python listcomp
-over codon-pair strings (`[np.prod([BNC[c] for c in cod]) for cod in ...]`
-across 3,721 pairs). replacing it with one ndarray lookup
-(`BNC[codon_base_idx_kmer].prod(axis=1)`) is where the ~110x came from.
-
-CUFS' ~24-39x came from dropping the
-`count(seqs).get_codon_table(normed=True, pseudocount=...).T.values`
-chain — pandas Series wrap, sort_index, pseudocount, normalise, transpose,
-values - and replacing it with one `count_array` per seq, an
-`np.add.at`-driven per-aa-group sum (synonymous branch), and a single
-divide.
-
-`CUFS.get_matrix` on 20 sequences drops from 0.92 ms to 0.40 ms (~2.3x).
-the headline is diluted by the broadcasted KL math in `_calc_matrix`,
-which was already a numpy op pre-v0.5.0 and is unchanged. splitting the
-post-change 0.40 ms gives 0.25 ms in `_calc_weights` and 0.14 ms in
-`_calc_matrix`; weights-side alone is ~3x (0.78 ms -> 0.25 ms), but
-the constant KL floor caps the total to 2.3x.
+(the ~110x on ENC k_mer=2 came from replacing a python listcomp over
+3,721 codon-pair strings with `BNC[codon_base_idx_kmer].prod(axis=1)`.)
 
 ## performance
 
-- `CodonCounter.count_array` generalised to k_mer in [1, 3] (#27).
-  sliding-window over codon ids, combined into a single bucket id per
-  k-mer, bincounted into a dense aligned ndarray. above k_mer=3 the
-  python `Counter` fallback is retired - dense aligned output would
-  exceed 14M entries; no in-package usage.
+- `CodonCounter.count_array` generalised to k_mer in [1, 3] (#27):
+  sliding window over codon ids, combined into a single bucket id per
+  k-mer, bincounted into a dense aligned ndarray.
 - `CodonCounter.count(seqs)` becomes a thin formatter on top of
-  `count_array` (#27). drops `_count_kmer_n` and `_format_counts`; the
-  k-mer concat-string index is built lazily via the new public
-  `kmer_index` property.
-- CAI and CodonPairBias k_mer>1 wired to `count_array` directly with a
-  precomputed `_log_weights_arr` / `_weights_arr` aligned to the
-  lex-product order (#27). skips the per-call pandas Series wrap +
-  reindex - over half the cost at k_mer=2.
-- RSCU and RCBS rewritten as stateless ndarray calls (#24). per-call
-  paths use `count_array` with weights pre-aligned at init; no longer
-  populate `self.counter.counts` as a side effect.
-- ENC k_mer=1/k_mer>1 implementations unified around `count_array` (#28).
-  the two parallel `_calc_*_single_kmer` / `_calc_*` methods collapse to
-  one body driven by the new `aa_group_kmer` / `codon_base_idx_kmer`
-  LUTs on the counter. `_calc_BCC` for k_mer>1 is now a single ndarray
-  expression instead of a python listcomp over k-mer strings.
-- `BaseCounter.count_array` vectorised for any k_mer (#27). sliding
-  window over base ids respects `frame` / `step` semantics. routes
-  `count(seqs)` through it for uniformity.
+  `count_array` (#27); k-mer concat-string index built lazily via the
+  new `kmer_index` property.
+- CAI and CodonPairBias k_mer>1 wired to `count_array` with pre-aligned
+  log/linear weight arrays (#27), skipping the per-call pandas reindex.
+- RSCU and RCBS rewritten as stateless ndarray calls on `count_array`
+  with weights pre-aligned at init (#24).
+- ENC k_mer=1 / k_mer>1 paths unified around `count_array` (#28); the
+  two `_calc_*_single_kmer` / `_calc_*` methods collapse to one body
+  driven by `aa_group_kmer` / `codon_base_idx_kmer` LUTs.
+- `BaseCounter.count_array` vectorised for any k_mer (#27); sliding
+  window over base ids respects `frame` / `step` semantics.
 - `geomean_array` / `mean_array` helpers in `utils` for the count_array
-  hot path (#26, #27). aligned-ndarray siblings of the existing
-  `geomean` / `mean` (which still serve the init-time pandas paths).
-- `pairwise.CodonUsageFrequency` rewritten on `count_array`. last
-  in-package hot path still routing through
-  `count(seqs).get_codon_table` / `.get_aa_table`. now stacks per-seq
-  `count_array` into `(n_kmers, n_seqs)`, normalises with
-  `np.add.at`-driven per-aa-group sums (synonymous branch) or a single
-  divide (non-synonymous). KL pair score is invariant to consistent
-  reordering of both arms, so the count_array order
-  (`counter.kmer_index`, aa-then-codon) replaces the prior alphabetic
-  codon order without changing scores.
+  hot path (#26, #27), aligned-ndarray siblings of the pandas
+  `geomean` / `mean`.
+- `pairwise.CodonUsageFrequency` rewritten on `count_array`: per-seq
+  arrays stacked, normalised with `np.add.at` per-aa-group sums
+  (synonymous) or a single divide (non-synonymous). count_array order
+  replaces the prior alphabetic codon order; KL pair score is invariant
+  under consistent reordering.
 
 ## refactors
 
-- collapsed `MaxWeight` / `MinWeight` / `BalancedWeight` into a single
+- `MaxWeight` / `MinWeight` / `BalancedWeight` collapsed into
   `WeightOptimizer(strategy="max"|"min"|"balanced")` (#20). old names
-  are FutureWarning shims; will be removed in v0.6.0.
-- collapsed `IntraSeqPermuter` / `IntraPosPermuter` into a single
-  `Permuter(scope="intra_seq"|"intra_pos")` (#23). old names are
-  FutureWarning shims; will be removed in v0.6.0.
-- promoted `CodonCounter` / `BaseCounter` internals to the public
-  surface that scores depend on (#22): `count_array`, `aa_group`,
-  `n_aa`, `codon_index`. then added `codon_base_idx` (#25),
-  `kmer_index`, `aa_group_kmer`, `codon_base_idx_kmer` (#27, #28) as
-  the k-mer extensions. `_codon_lex_to_aa` renamed to
-  `_codon_lex_to_idx` along the way (it stored codon indices, not aa
-  indices - the original name was a misnomer).
+  emit `FutureWarning` via shims; will be removed in v0.6.0.
+- `IntraSeqPermuter` / `IntraPosPermuter` collapsed into
+  `Permuter(scope="intra_seq"|"intra_pos")` (#23). old names emit
+  `FutureWarning` via shims; will be removed in v0.6.0.
+- counter internals promoted to the public surface that scores depend
+  on (#22, #25, #27, #28): `count_array`, `aa_group`, `n_aa`,
+  `codon_index`, `codon_base_idx`, `kmer_index`, `aa_group_kmer`,
+  `codon_base_idx_kmer`. `_codon_lex_to_aa` renamed to
+  `_codon_lex_to_idx` (it stored codon indices, not aa indices).
 - temporal coupling fixed in `RelativeSynonymousCodonUsage` and
-  `RelativeCodonBiasScore` (#24). `_calc_score` is now self-contained;
-  it no longer relies on a prior `_calc_seq_weights` populating
-  `self.counter.counts` (which broke concurrent use).
-- `Score._dispatch(seq, calc_fn, slice=None, **kwargs)` base method
-  shared by `ScalarScore.get_score`, `VectorScore.get_vector` and
-  `WeightScore.get_weights`. each base previously carried its own
-  near-identical str/list/ndarray dispatch shell (~30 lines × 3); now
-  they're one-line wrappers. `VectorScore.get_vector` keeps the
-  `pad` / ragged-stack `dtype=object` branch inline for the iterable
-  path (one caller, not worth threading through `_dispatch`). public
-  API unchanged.
-- `pairwise.PairwiseScore.get_matrix` n_jobs=1 dead code fixed. the
-  sequential `starmap` branch built `sf` and was unconditionally
-  overwritten by the next-line `Pool.starmap` - n_jobs=1 silently went
-  through a one-worker Pool, paying fork overhead with no parallelism.
-  output unchanged.
+  `RelativeCodonBiasScore` (#24): `_calc_score` no longer relies on a
+  prior `_calc_seq_weights` populating `self.counter.counts`, which
+  broke concurrent use.
+- `Score._dispatch` shared by `ScalarScore.get_score`,
+  `VectorScore.get_vector` and `WeightScore.get_weights`; each base
+  previously carried its own near-identical str/list/ndarray dispatch
+  shell. public API unchanged.
+- `pairwise.PairwiseScore.get_matrix` n_jobs=1 path fixed: the
+  sequential `starmap` branch was unconditionally overwritten by the
+  next-line `Pool.starmap`, so n_jobs=1 silently paid fork overhead
+  with no parallelism. output unchanged.
 
 ## breaking changes
 
@@ -145,10 +106,16 @@ the constant KL floor caps the total to 2.3x.
 - RSCU regression baseline added against pre-deep-modules main
   (commit 2bc54b3). pins the four `(directional, mean)` combinations
   on the first 500 E. coli sequences (#25).
+- property tests for `CodonPairBias` via `hypothesis`, covering the
+  k_mer=2 `count_array` / weights path against the pre-refactor
+  pandas reference.
+- `CHANGELOG.md` rendered into the Sphinx site via `myst-parser`, so
+  the readthedocs build now publishes the release notes alongside the
+  API reference.
 - `issue_module_depth.md` (local plan) drove the deepening work
   through eight candidates; all closed in this release.
 
-**Full Changelog**: https://github.com/alondmnt/codon-bias/compare/v0.4.0...HEAD
+**Full Changelog**: https://github.com/alondmnt/codon-bias/compare/v0.4.0...v0.5.0
 
 ---
 

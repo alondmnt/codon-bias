@@ -40,7 +40,7 @@ The package contains 6 submodules:
 
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __author__ = "Alon Diament"
 
 __all__ = ["optimizers", "pairwise", "random", "scores", "stats", "utils"]
