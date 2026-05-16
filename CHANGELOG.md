@@ -19,9 +19,9 @@ per-call timings on a 3.6 kb sequence (200 calls, mean):
 |---------------------------------------|----------:|---------:|--------:|
 | ENC k_mer=2, bg_correction=True       | 22.9 ms   | 0.21 ms  |  ~110x  |
 | CAI k_mer=2                           | 0.82 ms   | 0.05 ms  |   ~16x  |
-| RSCU                                  | ~0.22 ms  | 0.016 ms |   ~14x  |
+| RSCU                                  | ~1.05 ms  | 0.017 ms |   ~60x  |
 | `CodonCounter.count(seq).counts` k=2  | 0.15 ms   | 0.04 ms  |  ~3.5x  |
-| RCB                                   | ~0.15 ms  | 0.04 ms  |  ~3.5x  |
+| RCB                                   | ~0.77 ms  | 0.044 ms |   ~17x  |
 | ENC k_mer=1 (default, bg_correction)  | (vectorised in v0.4.0)        | within noise |
 | CUFS.get_score                        | 1.02 ms   | 0.042 ms |   ~24x  |
 | CUFS.get_score synonymous=True        | 1.77 ms   | 0.045 ms |   ~39x  |
